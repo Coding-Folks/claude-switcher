@@ -10,7 +10,7 @@
     { account: { id: "a-kantor", label: "Kantor", kind: "windows_user", windows_user: "claude-kantor", created_at: "2026-11-12T09:10:00Z" }, state: "Running", bytes: Math.round(1.18 * GB) },
     { account: { id: "a-klien", label: "Klien", kind: "windows_user", windows_user: "claude-klien", created_at: "2026-11-12T09:40:00Z" }, state: "Stopped", bytes: null },
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
-    { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/Irsal/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: "Stopped", bytes: null },
+    { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/Irsal/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
   ];
   const settings = {
     autostart: true,
@@ -43,7 +43,8 @@
     },
     async close_account({ id }) { const a = find(id); a.state = "Stopped"; a.bytes = null; emit("status", null); },
     async rename_account({ id, label }) { find(id).account.label = label; },
-    async repair_account({ id }) { find(id).state = "Stopped"; return { fixed: ["password"] }; },
+    async repair_account({ id }) {
+      if (find(id).account.kind === "same_user" && params.get("slot") === "unsupported") throw { code: "Invalid", message_id: "err.slot_unsupported", detail: null }; find(id).state = "Stopped"; return { fixed: ["password"] }; },
     async import_history({ id }) {
       find(id);
       if (params.get("fail") === "import") throw { code: "NotFound", message_id: "err.import_no_signin", detail: null };

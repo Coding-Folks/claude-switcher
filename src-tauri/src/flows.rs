@@ -137,9 +137,20 @@ impl<P: Platform> Flows<P> {
                 let want = self.p.slot_data_dir(a.data_root.as_deref()?);
                 mine.into_iter().find(|i| i.data_dir.as_deref().map(|d| crate::monitor::same_dir(d, &want)).unwrap_or(false))
             }
-            AccountKind::Main => mine.into_iter().find(|i| {
-                !i.data_dir.as_deref().map(|d| slot_dirs.iter().any(|s| crate::monitor::same_dir(d, s))).unwrap_or(false)
-            }),
+            AccountKind::Main => {
+                // Prefer the instance on Main's real data folder. An instance with no readable folder
+                // may be a slot still starting, so it only counts when nothing matches exactly.
+                let real = self.p.main_data_dir();
+                let mine: Vec<_> = mine.collect();
+                mine.iter()
+                    .find(|i| i.data_dir.as_deref().map(|d| crate::monitor::same_dir(d, &real)).unwrap_or(false))
+                    .or_else(|| {
+                        mine.iter().find(|i| {
+                            !i.data_dir.as_deref().map(|d| slot_dirs.iter().any(|s| crate::monitor::same_dir(d, s))).unwrap_or(false)
+                        })
+                    })
+                    .copied()
+            }
         };
         found.map(|i| (i.root_pid, i.bytes))
     }
@@ -286,7 +297,10 @@ impl<P: Platform> Flows<P> {
         let id = uuid::Uuid::new_v4().to_string();
         let root = crate::slot::root_for(&self.p.slots_dir(), &id);
         progress("prepare_slot");
-        self.p.slot_prepare(&root)?;
+        if let Err(e) = self.p.slot_prepare(&root) {
+            let _ = self.p.slot_remove(&root); // prepare may have made part of the folder
+            return Err(e);
+        }
         let account = Account {
             id,
             label: label.to_string(),
@@ -443,7 +457,13 @@ impl<P: Platform> Flows<P> {
             return Ok(report);
         }
         if a.kind == AccountKind::SameUser {
-            self.p.slot_prepare(Self::data_root(&a)?)?; // recreates the data folder and the WindowsApps junction
+            let root = Self::data_root(&a)?;
+            // Claude did not take the slot's folder as is (an update changed how it picks its data folder):
+            // recreating the folder cannot help, so say so and point to the separate-user mode (spec §7).
+            if self.p.slot_move_label(root).map(|l| !l.starts_with(HEALTHY_MOVE_LABEL)).unwrap_or(false) {
+                return Err(AppError::new(ErrorCode::Invalid, "err.slot_unsupported"));
+            }
+            self.p.slot_prepare(root)?; // recreates the data folder and the WindowsApps junction
             self.problems.lock().unwrap().remove(id);
             return Ok(report);
         }
@@ -571,6 +591,7 @@ mod tests {
         }
         fn sid_of(&self, user: &str) -> Option<String> { Some(format!("SID-{user}")) }
         fn main_sid(&self) -> Option<String> { Some("SID-main".into()) }
+        fn main_data_dir(&self) -> PathBuf { PathBuf::from(r"C:\Users\me\AppData\Local\Claude-Data\claude_p") }
         fn slots_dir(&self) -> PathBuf { PathBuf::from(r"C:\slots") }
         fn slot_data_dir(&self, r: &Path) -> PathBuf { r.join(r"Claude-Data\claude_p") }
         fn slot_prepare(&self, r: &Path) -> AppResult<()> {
@@ -641,6 +662,23 @@ mod tests {
         assert_eq!(f.add("Slot A", AddMode::SameUser, &|_| {}).unwrap_err().message_id, "err.slot_prepare");
         assert_eq!(f.accounts().unwrap().len(), 1);
         assert!(!f.p.calls().iter().any(|c| c.starts_with("launch_slot")));
+        // prepare may have made part of the folder before failing: it is cleaned up
+        assert!(f.p.calls().iter().any(|c| c.starts_with(r"slot_remove C:\slots\")), "{:?}", f.p.calls());
+    }
+
+    #[test]
+    fn main_prefers_its_real_data_dir_over_an_unidentified_instance() {
+        let (f, _) = flows();
+        let main = main_id(&f);
+        {
+            let mut r = f.p.running.lock().unwrap();
+            // a slot that is still starting has no children yet, so no data_dir; listed first on purpose
+            r.push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 3, bytes: GB, data_dir: None });
+            r.push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 1, bytes: 3 * GB, data_dir: Some(PathBuf::from(r"C:\Users\me\AppData\Local\Claude-Data\claude_p")) });
+        }
+        assert_eq!(state_of(&f, &main), (AccountState::Running, Some(3 * GB)));
+        f.close(&main).unwrap();
+        assert_eq!(f.p.calls(), vec!["close 1 main"]);
     }
 
     #[test]
@@ -758,6 +796,18 @@ mod tests {
         f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
         f.p.move_labels.lock().unwrap().insert(root, "stay_never_left".into());
         assert_eq!(state_of(&f, &id).0, AccountState::Problem);
+    }
+
+    #[test]
+    fn repair_cannot_fix_an_unsupported_slot_and_says_why() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        f.p.move_labels.lock().unwrap().insert(root, "stay_never_left".into());
+        assert_eq!(state_of(&f, &id).0, AccountState::Problem);
+        let e = f.repair(&id).unwrap_err();
+        assert_eq!(e.message_id, "err.slot_unsupported");
+        assert_eq!(state_of(&f, &id).0, AccountState::Problem); // not shown as fixed
     }
 
     #[test]

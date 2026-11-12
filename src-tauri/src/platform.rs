@@ -32,6 +32,8 @@ pub trait Platform: Send + Sync {
     fn main_sid(&self) -> Option<String>;
 
     // Same-user slots (slot.rs). None of these needs admin.
+    /// Main's own Claude data folder: %LOCALAPPDATA%Claude-Dataclaude_<family>.
+    fn main_data_dir(&self) -> PathBuf;
     fn slots_dir(&self) -> PathBuf;
     fn slot_data_dir(&self, data_root: &Path) -> PathBuf;
     fn slot_prepare(&self, data_root: &Path) -> AppResult<()>;
@@ -135,6 +137,9 @@ impl Platform for WinPlatform {
     }
     fn main_sid(&self) -> Option<String> {
         self.main_sid.clone()
+    }
+    fn main_data_dir(&self) -> PathBuf {
+        crate::slot::data_dir(&self.real_local, &self.pkg.family)
     }
     fn slots_dir(&self) -> PathBuf {
         self.real_local.join(r"ClaudeSwitcher\slots")

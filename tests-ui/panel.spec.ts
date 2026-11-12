@@ -197,6 +197,13 @@ test('removing a same-user account says its login and data go', async ({ page })
   await expect(dialog).not.toContainText('User Windows');
 });
 
+test('an unsupported slot explains itself and points to the separate-user mode', async ({ page }) => {
+  await ready(page, '&slot=unsupported');
+  await row(page, 'Slot B').getByRole('button', { name: 'Perbaiki Slot B' }).click();
+  await expect(page.locator('#alert')).toHaveText('Versi Claude ini tidak lagi memakai folder akun ini. Hapus akun ini, lalu tambahkan lagi dengan pilihan User Windows terpisah.');
+  await expect(row(page, 'Slot B')).toContainText('Bermasalah');
+});
+
 test('opening a slot whose folder was deleted says so', async ({ page }) => {
   await ready(page, '&slot=missing');
   await page.getByRole('button', { name: 'Buka Slot B' }).click();
