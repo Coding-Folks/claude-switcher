@@ -44,6 +44,61 @@ fn plain(p: &Path) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(&s).trim_end_matches('\\').to_lowercase()
 }
 
+/// Creates directory junction `link` → `target` with FSCTL_SET_REPARSE_POINT: no shell involved,
+/// so characters such as `&`, `^` or `%` in the paths are taken literally. `link` must not exist.
+pub fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::{CloseHandle, GENERIC_WRITE};
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_MODE, OPEN_EXISTING,
+    };
+    use windows::Win32::System::IO::DeviceIoControl;
+    const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
+    const FSCTL_SET_REPARSE_POINT: u32 = 0x0009_00A4;
+
+    let target = std::fs::canonicalize(target)?; // absolute, with a \\?\ prefix
+    let plain = target.to_string_lossy().trim_start_matches(r"\\?\").to_string();
+    let substitute: Vec<u16> = format!(r"\??\{plain}").encode_utf16().collect();
+    let print: Vec<u16> = plain.encode_utf16().collect();
+    std::fs::create_dir(link)?; // fails if something is already there
+
+    // REPARSE_DATA_BUFFER (MountPointReparseBuffer): header, then "<substitute>\0<print>\0".
+    let path_bytes = (substitute.len() + 1 + print.len() + 1) * 2;
+    let mut buf: Vec<u8> = Vec::with_capacity(16 + path_bytes);
+    buf.extend_from_slice(&IO_REPARSE_TAG_MOUNT_POINT.to_le_bytes());
+    buf.extend_from_slice(&((8 + path_bytes) as u16).to_le_bytes()); // ReparseDataLength
+    buf.extend_from_slice(&0u16.to_le_bytes()); // Reserved
+    buf.extend_from_slice(&0u16.to_le_bytes()); // SubstituteNameOffset
+    buf.extend_from_slice(&((substitute.len() * 2) as u16).to_le_bytes());
+    buf.extend_from_slice(&(((substitute.len() + 1) * 2) as u16).to_le_bytes()); // PrintNameOffset
+    buf.extend_from_slice(&((print.len() * 2) as u16).to_le_bytes());
+    for u in substitute.iter().chain([0u16].iter()).chain(print.iter()).chain([0u16].iter()) {
+        buf.extend_from_slice(&u.to_le_bytes());
+    }
+
+    let fail = |what: &str, link: &Path| {
+        let _ = std::fs::remove_dir(link);
+        AppError::io(format!("{what} failed for {}", link.display()))
+    };
+    unsafe {
+        let h = CreateFileW(
+            &HSTRING::from(link.as_os_str()),
+            GENERIC_WRITE.0,
+            FILE_SHARE_MODE(0),
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            None,
+        )
+        .map_err(|_| fail("CreateFileW", link))?;
+        let mut returned = 0u32;
+        let ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, Some(buf.as_ptr() as *const _), buf.len() as u32, None, 0, Some(&mut returned), None);
+        let _ = CloseHandle(h);
+        ok.map_err(|_| fail("FSCTL_SET_REPARSE_POINT", link))?;
+    }
+    Ok(())
+}
+
 pub fn is_junction_to(link: &Path, target: &Path) -> bool {
     let Ok(md) = std::fs::symlink_metadata(link) else { return false };
     if !is_reparse(&md) {
@@ -141,6 +196,19 @@ mod tests {
         assert!(!profile.exists());
         assert_eq!(std::fs::read_to_string(target.join("keep.txt")).unwrap(), "keep");
         assert_eq!(std::fs::read_to_string(target.join("skills").join("s.md")).unwrap(), "skill");
+    }
+
+    #[test]
+    fn create_junction_natively_even_with_odd_characters() {
+        let root = tmp().join("a&b^c%PATH% d");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("f.txt"), "x").unwrap();
+        let link = root.join("link");
+        create_junction(&link, &target).unwrap();
+        assert!(is_junction_to(&link, &target));
+        assert_eq!(std::fs::read_to_string(link.join("f.txt")).unwrap(), "x");
+        assert!(create_junction(&link, &target).is_err()); // never over an existing entry
     }
 
     #[test]

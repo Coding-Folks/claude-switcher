@@ -41,11 +41,16 @@ pub fn prepare(data_root: &Path, family: &str, real_windowsapps: &Path) -> AppRe
         }
     }
     std::fs::create_dir_all(link.parent().expect("link has a parent")).map_err(prepare_failed)?;
-    let out = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(real_windowsapps).output().map_err(prepare_failed)?;
-    if !out.status.success() || !crate::share::is_junction_to(&link, real_windowsapps) {
-        return Err(prepare_failed(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+    crate::share::create_junction(&link, real_windowsapps).map_err(|e| prepare_failed(e.detail.unwrap_or_default()))?;
+    if !crate::share::is_junction_to(&link, real_windowsapps) {
+        return Err(prepare_failed(format!("{} did not become a junction", link.display())));
     }
     Ok(())
+}
+
+/// The slot's Claude data folder exists (its login is still there), whatever the junction's state.
+pub fn has_data(data_root: &Path, family: &str) -> bool {
+    data_dir(data_root, family).is_dir()
 }
 
 pub fn is_ready(data_root: &Path, family: &str, real_windowsapps: &Path) -> bool {
@@ -54,12 +59,9 @@ pub fn is_ready(data_root: &Path, family: &str, real_windowsapps: &Path) -> bool
 
 /// Deletes `<slots>\<id>`. Junctions inside (WindowsApps) are unlinked, never followed, and a path
 /// that is not directly inside a `slots` folder is refused, so a wrong argument deletes nothing.
-pub fn remove(slot_dir: &Path) -> AppResult<()> {
-    let in_slots = slot_dir
-        .parent()
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("slots"))
-        .unwrap_or(false);
+pub fn remove(slots_dir: &Path, slot_dir: &Path) -> AppResult<()> {
+    let in_slots = slot_dir.parent().map(|p| crate::monitor::same_dir(p, slots_dir)).unwrap_or(false)
+        && !crate::monitor::same_dir(slot_dir, slots_dir);
     if !in_slots {
         return Err(AppError::new(ErrorCode::Invalid, "err.generic").with_detail(format!("not a slot folder: {}", slot_dir.display())));
     }
@@ -78,7 +80,15 @@ pub fn launch(data_root: &Path, real_alias: &Path) -> AppResult<()> {
 /// The last `[user-data-move] <label>` in the slot's Claude log; `already_moved*` means the slot's
 /// data folder was taken as is.
 pub fn move_label(data_root: &Path) -> Option<String> {
-    let log = std::fs::read_to_string(data_root.join(r"Claude\logs\main.log")).ok()?;
+    // Only the end of the log matters (the last label); the log can grow large and this runs on every refresh.
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 64 * 1024;
+    let mut f = std::fs::File::open(data_root.join(r"Claude\logs\main.log")).ok()?;
+    let len = f.metadata().ok()?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(TAIL))).ok()?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).ok()?;
+    let log = String::from_utf8_lossy(&bytes);
     const TAG: &str = "[user-data-move] ";
     let at = log.rfind(TAG)? + TAG.len();
     log[at..].split_whitespace().next().map(str::to_string)
@@ -148,16 +158,52 @@ mod tests {
         let (root, real_apps) = (tmp().join("slots").join("id-1").join("Local"), tmp_with_file("claude-desktop.exe"));
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
         write(root.join(r"Claude-Data\claude_pzs\Local State"), "{}");
-        remove(root.parent().unwrap()).unwrap();
+        let slot_dir = root.parent().unwrap();
+        remove(slot_dir.parent().unwrap(), slot_dir).unwrap();
         assert!(!root.exists());
         assert!(real_apps.join("claude-desktop.exe").exists());
     }
 
     #[test]
     fn remove_refuses_paths_outside_a_slot() {
+        let slots = tmp().join("slots");
+        std::fs::create_dir_all(&slots).unwrap();
         let d = tmp();
-        assert!(remove(&d).is_err()); // not under a "slots" folder
+        assert!(remove(&slots, &d).is_err()); // not inside the slots folder
         assert!(d.exists());
+        // a folder that merely happens to sit in another folder named "slots"
+        let elsewhere = tmp().join("slots").join("Documents");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        assert!(remove(&slots, &elsewhere).is_err());
+        assert!(elsewhere.exists());
+        assert!(remove(&slots, &slots).is_err()); // never the slots folder itself
+    }
+
+    #[test]
+    fn prepare_works_when_the_path_has_cmd_special_characters() {
+        let (root, real_apps) = (tmp().join("a&b^c%d%").join("Local"), tmp_with_file("claude-desktop.exe"));
+        prepare(&root, "Claude_PZS", &real_apps).unwrap();
+        assert!(crate::share::is_junction_to(&root.join(r"Microsoft\WindowsApps"), &real_apps));
+    }
+
+    #[test]
+    fn has_data_tells_a_missing_junction_from_a_missing_data_folder() {
+        let (root, real_apps) = (tmp().join("Local"), tmp_with_file("claude-desktop.exe"));
+        prepare(&root, "Claude_PZS", &real_apps).unwrap();
+        std::fs::remove_dir(root.join(r"Microsoft\WindowsApps")).unwrap(); // only the link goes
+        assert!(!is_ready(&root, "Claude_PZS", &real_apps));
+        assert!(has_data(&root, "Claude_PZS"));
+        assert!(!has_data(&tmp().join("Local"), "Claude_PZS"));
+    }
+
+    #[test]
+    fn move_label_reads_only_the_end_of_a_big_log() {
+        let root = tmp().join("Local");
+        let mut log = String::from("[user-data-move] stay_never_left\n");
+        log.push_str(&"x".repeat(300_000));
+        log.push_str("\n[user-data-move] already_moved_package_emptied {}\n");
+        write(root.join(r"Claude\logs\main.log"), &log);
+        assert_eq!(move_label(&root).as_deref(), Some("already_moved_package_emptied"));
     }
 
     #[test]

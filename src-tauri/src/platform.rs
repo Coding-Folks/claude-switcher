@@ -155,7 +155,7 @@ impl Platform for WinPlatform {
     }
     fn slot_remove(&self, data_root: &Path) -> AppResult<()> {
         let slot_dir = data_root.parent().ok_or_else(|| AppError::io("slot has no parent folder"))?;
-        crate::slot::remove(slot_dir)
+        crate::slot::remove(&self.slots_dir(), slot_dir)
     }
     fn launch_slot(&self, data_root: &Path) -> AppResult<()> {
         crate::slot::launch(data_root, &self.real_windowsapps().join("claude-desktop.exe"))
