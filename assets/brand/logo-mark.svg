@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="t">
+  <title id="t">Claude Switcher by Coding Folks</title>
+  <defs>
+    <linearGradient id="blue" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#002CC4"/>
+      <stop offset="1" stop-color="#008FFF"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#EB6C00"/>
+      <stop offset="1" stop-color="#EBAC00"/>
+    </linearGradient>
+  </defs>
+  <!-- the account behind -->
+  <rect x="316" y="104" width="604" height="604" rx="156" fill="#0944A5"/>
+  <!-- the account in front -->
+  <rect x="104" y="316" width="604" height="604" rx="156" fill="url(#blue)" stroke="#FFFFFF" stroke-width="28"/>
+  <!-- its two lines: a signed-in session -->
+  <rect x="228" y="548" width="356" height="68" rx="34" fill="#FFFFFF"/>
+  <rect x="228" y="684" width="228" height="68" rx="34" fill="#FFFFFF" fill-opacity="0.82"/>
+  <!-- the Coding Folks dot: the active account -->
+  <circle cx="708" cy="316" r="124" fill="url(#orange)" stroke="#FFFFFF" stroke-width="28"/>
+</svg>

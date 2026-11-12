@@ -80,8 +80,10 @@ button, input { font: inherit; color: inherit; }
 /* Header: mark, title, running count */
 .head { display: flex; align-items: center; gap: 0.5rem; }
 .mark { width: 1.25rem; height: 1.25rem; flex: none; }
-.mark-back { fill: var(--other); }
-.mark-front { fill: var(--text); }
+/* Brand mark (assets/brand/logo-mark.svg, flat at this size): Coding Folks blue, the orange dot is the active account. */
+.mark-back { fill: #0944A5; }
+.mark-front { fill: #0D65F2; stroke: var(--ground); stroke-width: 48; }
+.mark-dot { fill: #EB7D00; stroke: var(--ground); stroke-width: 48; }
 h1 { font-size: var(--fs-title); font-weight: 600; margin: 0; flex: 1; }
 .count { margin: 0; color: var(--muted); font-size: var(--fs-small); }
 
