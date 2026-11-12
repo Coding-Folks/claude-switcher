@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Panel window permissions",
   "windows": ["panel"],
-  "permissions": ["core:default", "core:event:default"]
+  "permissions": ["core:default", "core:event:default", "core:window:allow-set-size"]
 }

@@ -5,7 +5,6 @@ use crate::elevated::ElevatedOp;
 use crate::error::{AppError, AppResult, ErrorCode};
 pub use crate::platform::Platform;
 use crate::store::{Account, AccountKind, LoadOutcome, Store};
-use crate::vault::Zeroizing;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -315,10 +314,6 @@ impl<P: Platform> Flows<P> {
         Ok(report)
     }
 }
-
-/// Keeps a `Zeroizing` import used in non-test builds.
-#[allow(dead_code)]
-fn _assert_zeroizing(_: &Zeroizing<String>) {}
 
 #[cfg(test)]
 mod tests {
