@@ -39,6 +39,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_panel(app, None)))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        tray::toggle_panel(app, None);
+                    }
+                })
+                .build(),
+        )
         .manage(AppState { flows, busy: busy.clone() })
         .invoke_handler(tauri::generate_handler![
             commands::list_accounts,
@@ -56,6 +65,13 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             tray::create(&handle)?;
+            {
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                let open_panel = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyK);
+                if let Err(e) = handle.global_shortcut().register(open_panel) {
+                    applog::error("shortcut Ctrl+Alt+K not registered", &[("detail", &e.to_string())]);
+                }
+            }
             if let Some(w) = app.get_webview_window("panel") {
                 let (w2, busy) = (w.clone(), busy.clone());
                 w.on_window_event(move |e| {

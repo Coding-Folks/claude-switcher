@@ -12,6 +12,9 @@ const TRAY_ID: &str = "main";
 /// Builds the menu from data computed elsewhere: this runs on the main thread, so it must not block.
 fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tauri::Wry>, usize)> {
     let menu = Menu::new(app)?;
+    // tray-icon does not report keyboard selection of the icon, so the menu and Ctrl+Alt+K open the panel too.
+    menu.append(&MenuItem::with_id(app, "panel", "Buka panel	Ctrl+Alt+K", true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
     let mut running = 0;
     for v in views {
         let on = v.state == AccountState::Running;
@@ -25,7 +28,7 @@ fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tau
 }
 
 fn tooltip(running: usize) -> String {
-    format!("Claude Switcher — {running} berjalan")
+    format!("Claude Switcher — {running} berjalan · Ctrl+Alt+K")
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
@@ -66,7 +69,7 @@ pub fn rebuild(app: &AppHandle) {
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
         "quit" => app.exit(0),
-        "add" => show_panel(app, None),
+        "add" | "panel" => show_panel(app, None),
         _ => {
             if let Some(acc) = id.strip_prefix("open:") {
                 let app = app.clone();

@@ -60,6 +60,11 @@ test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus 
   await expect(page.locator('#autostart')).toBeFocused();
 });
 
+test('the keyboard shortcut that opens the panel is stated in it', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('.foot')).toContainText('Buka panel: Ctrl+Alt+K');
+});
+
 test('escape closes menu then returns focus to its button', async ({ page }) => {
   await ready(page);
   const kebab = row(page, 'Kantor').getByRole('button', { name: 'Opsi untuk Kantor' });

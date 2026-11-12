@@ -60,6 +60,7 @@ window.STRINGS = {
   rename_label: "Nama baru",
 
   autostart: "Jalan saat Windows mulai",
+  shortcut_hint: "Buka panel: Ctrl+Alt+K",
 
   "err.uac_cancelled": "Dibatalkan. Tidak ada yang berubah.",
   "err.claude_missing": "Claude Desktop tidak ditemukan. Instal dulu dari claude.ai/download.",
