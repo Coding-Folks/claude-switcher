@@ -120,6 +120,10 @@ fn powershell() -> PathBuf {
     system32(r"WindowsPowerShell\v1.0\powershell.exe")
 }
 
+pub fn bootstrap_args(script: &Path) -> String {
+    format!("-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"", script.display())
+}
+
 /// First run for a hidden user: creates its profile, registers Claude, links `.claude`.
 pub fn bootstrap(user: &str, pw: &Zeroizing<String>, pkg: &ClaudePkg, main_claude_dir: &Path) -> AppResult<BootstrapReport> {
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
@@ -127,8 +131,13 @@ pub fn bootstrap(user: &str, pw: &Zeroizing<String>, pkg: &ClaudePkg, main_claud
     std::fs::create_dir_all(&dir)?;
     crate::share::grant_shared_access(&dir, user)?;
     let log = dir.join("boot.log");
-    let args = format!("-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {}", encode_ps(&bootstrap_script(&pkg.family, main_claude_dir, &log)));
-    let run = run_as(user, pw, &powershell(), &args, Some(BOOTSTRAP_TIMEOUT));
+    // The script goes in a file: CreateProcessWithLogonW refuses command lines over 1024 characters
+    // (ERROR_INVALID_PARAMETER), and an -EncodedCommand of this script is several thousand.
+    let script = dir.join("boot.ps1");
+    let mut body = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM so Windows PowerShell 5 reads non-ASCII paths right
+    body.extend_from_slice(bootstrap_script(&pkg.family, main_claude_dir, &log).as_bytes());
+    std::fs::write(&script, body)?;
+    let run = run_as(user, pw, &powershell(), &bootstrap_args(&script), Some(BOOTSTRAP_TIMEOUT));
     let report = std::fs::read_to_string(&log).map(|s| parse_bootstrap_log(&s)).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dir);
     run?;
@@ -199,5 +208,32 @@ mod tests {
     fn encoded_command_is_utf16le_base64() {
         // "a" -> 61 00 -> "YQA="
         assert_eq!(encode_ps("a"), "YQA=");
+    }
+
+    #[test]
+    fn run_as_unknown_user_is_a_logon_failure_not_a_bad_parameter() {
+        // Windows validates the call before the logon: a parameter it rejects shows up as Win32 87
+        // even for a real user, which is what broke "Tambah akun". An unknown user must reach the logon.
+        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join(r"System32\cmd.exe");
+        let err = run_as("claude-nope-zz9", &Zeroizing::new("x".into()), &cmd, "/c exit 0", Some(Duration::from_secs(5))).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::LogonFailed, "{err:?}");
+    }
+
+    #[test]
+    fn bootstrap_command_line_fits_create_process_with_logon() {
+        // CreateProcessWithLogonW rejects command lines over 1024 characters with ERROR_INVALID_PARAMETER.
+        let log = Path::new(r"C:\Users\Irsal\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.log");
+        let args = bootstrap_args(Path::new(r"C:\Users\Irsal\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.ps1"));
+        let line = format!("\"{}\" {}", powershell().display(), args);
+        assert!(line.len() <= 1024, "{} chars", line.len());
+        let _ = log;
+    }
+
+    #[test]
+    fn long_command_line_is_rejected_before_logon() {
+        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join(r"System32\cmd.exe");
+        let long = format!("/c rem {}", "x".repeat(2000));
+        let err = run_as("claude-nope-zz9", &Zeroizing::new("x".into()), &cmd, &long, Some(Duration::from_secs(5))).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Win32(0x8007_0057), "{err:?}");
     }
 }
