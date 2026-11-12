@@ -519,7 +519,7 @@ mod tests {
     fn open_running_focuses_by_relaunch() {
         let (f, _) = flows();
         let id = add_existing(&f, "Kantor", "claude-kantor");
-        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 7, bytes: GB });
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 7, bytes: GB, data_dir: None });
         *f.p.free.lock().unwrap() = GB; // low RAM does not matter for an instance already running
         assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::Focused);
         assert_eq!(f.p.calls(), vec!["launch_as claude-kantor"]);
@@ -566,7 +566,7 @@ mod tests {
     fn list_states_and_bytes() {
         let (f, _) = flows();
         let kantor = add_existing(&f, "Kantor", "claude-kantor");
-        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 1, bytes: 2 * GB });
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 1, bytes: 2 * GB, data_dir: None });
         let v = f.list().unwrap();
         let main = v.iter().find(|x| x.account.kind == AccountKind::Main).unwrap();
         assert_eq!((main.state, main.bytes), (AccountState::Running, Some(2 * GB)));
@@ -578,7 +578,7 @@ mod tests {
     fn close_hidden_runs_as_that_user() {
         let (f, _) = flows();
         let id = add_existing(&f, "Kantor", "claude-kantor");
-        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB });
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB, data_dir: None });
         f.close(&id).unwrap();
         assert_eq!(f.p.calls(), vec!["close 9 claude-kantor"]);
     }
@@ -603,7 +603,7 @@ mod tests {
     fn remove_order() {
         let (f, _) = flows();
         let id = add_existing(&f, "Kantor", "claude-kantor");
-        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB });
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB, data_dir: None });
         f.remove(&id).unwrap();
         // the ACE is revoked while the account name still resolves
         assert_eq!(f.p.calls(), vec!["close 9 claude-kantor", "revoke claude-kantor", "delete_user claude-kantor", "vault_delete claude-kantor"]);
@@ -659,7 +659,7 @@ mod tests {
     fn import_closes_a_running_account_first() {
         let (f, _) = flows();
         let id = add_existing(&f, "Kantor", "claude-kantor");
-        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB });
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB, data_dir: None });
         f.import_history(&id).unwrap();
         assert_eq!(f.p.calls(), vec!["close 9 claude-kantor", "import_sessions claude-kantor"]);
     }
