@@ -363,6 +363,7 @@ mod tests {
     use crate::store::{Account, AccountKind, Store};
     use crate::vault::Zeroizing;
     use std::collections::{HashMap, HashSet};
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
     const GB: u64 = 1 << 30;
@@ -378,6 +379,8 @@ mod tests {
         vault: Mutex<HashMap<String, String>>,
         junction_broken: Mutex<HashSet<String>>,
         report: Mutex<Option<BootstrapReport>>,
+        slot_missing: Mutex<HashSet<String>>,
+        move_labels: Mutex<HashMap<String, String>>,
     }
     impl Fake {
         fn new() -> Self {
@@ -443,6 +446,19 @@ mod tests {
         }
         fn sid_of(&self, user: &str) -> Option<String> { Some(format!("SID-{user}")) }
         fn main_sid(&self) -> Option<String> { Some("SID-main".into()) }
+        fn slots_dir(&self) -> PathBuf { PathBuf::from(r"C:\slots") }
+        fn slot_data_dir(&self, r: &Path) -> PathBuf { r.join(r"Claude-Data\claude_p") }
+        fn slot_prepare(&self, r: &Path) -> AppResult<()> {
+            self.check("slot_prepare")?; self.log(format!("slot_prepare {}", r.display()));
+            self.slot_missing.lock().unwrap().remove(&r.display().to_string()); Ok(())
+        }
+        fn slot_ready(&self, r: &Path) -> bool { !self.slot_missing.lock().unwrap().contains(&r.display().to_string()) }
+        fn slot_remove(&self, r: &Path) -> AppResult<()> { self.check("slot_remove")?; self.log(format!("slot_remove {}", r.display())); Ok(()) }
+        fn launch_slot(&self, r: &Path) -> AppResult<()> { self.check("launch_slot")?; self.log(format!("launch_slot {}", r.display())); Ok(()) }
+        fn slot_move_label(&self, r: &Path) -> Option<String> {
+            Some(self.move_labels.lock().unwrap().get(&r.display().to_string()).cloned().unwrap_or_else(|| "already_moved_package_emptied".into()))
+        }
+        fn slot_import(&self, r: &Path) -> AppResult<usize> { self.check("slot_import")?; self.log(format!("slot_import {}", r.display())); Ok(1) }
     }
 
     fn flows() -> (Flows<Fake>, std::path::PathBuf) {

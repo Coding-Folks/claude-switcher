@@ -12,6 +12,7 @@ pub mod platform;
 pub mod flows;
 pub mod applog;
 pub mod history;
+pub mod slot;
 pub mod commands;
 pub mod tray;
 

@@ -7,7 +7,7 @@ use crate::launcher::BootstrapReport;
 use crate::monitor::Snapshot;
 use crate::vault::Zeroizing;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub trait Platform: Send + Sync {
@@ -30,6 +30,17 @@ pub trait Platform: Send + Sync {
     fn snapshot(&self) -> Snapshot;
     fn sid_of(&self, user: &str) -> Option<String>;
     fn main_sid(&self) -> Option<String>;
+
+    // Same-user slots (slot.rs). None of these needs admin.
+    fn slots_dir(&self) -> PathBuf;
+    fn slot_data_dir(&self, data_root: &Path) -> PathBuf;
+    fn slot_prepare(&self, data_root: &Path) -> AppResult<()>;
+    fn slot_ready(&self, data_root: &Path) -> bool;
+    /// Deletes the whole slot: the parent of `data_root`, i.e. `<slots>\<id>`.
+    fn slot_remove(&self, data_root: &Path) -> AppResult<()>;
+    fn launch_slot(&self, data_root: &Path) -> AppResult<()>;
+    fn slot_move_label(&self, data_root: &Path) -> Option<String>;
+    fn slot_import(&self, data_root: &Path) -> AppResult<usize>;
 }
 
 pub struct WinPlatform {
@@ -37,6 +48,8 @@ pub struct WinPlatform {
     main_claude_dir: PathBuf,
     main_sid: Option<String>,
     sids: Mutex<HashMap<String, Option<String>>>,
+    /// The real %LOCALAPPDATA% (each slot gets its own one).
+    real_local: PathBuf,
 }
 
 impl WinPlatform {
@@ -44,7 +57,12 @@ impl WinPlatform {
         let pkg = crate::claude_pkg::detect()?;
         let home = std::env::var_os("USERPROFILE").map(PathBuf::from).ok_or_else(|| AppError::io("USERPROFILE not set"))?;
         let main_sid = std::env::var("USERNAME").ok().and_then(|u| crate::winuser::sid_of(&u));
-        Ok(Self { pkg, main_claude_dir: home.join(".claude"), main_sid, sids: Mutex::new(HashMap::new()) })
+        let real_local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
+        Ok(Self { pkg, main_claude_dir: home.join(".claude"), main_sid, sids: Mutex::new(HashMap::new()), real_local })
+    }
+
+    fn real_windowsapps(&self) -> PathBuf {
+        self.real_local.join(r"Microsoft\WindowsApps")
     }
 
     pub fn install_dir(&self) -> PathBuf {
@@ -117,5 +135,30 @@ impl Platform for WinPlatform {
     }
     fn main_sid(&self) -> Option<String> {
         self.main_sid.clone()
+    }
+    fn slots_dir(&self) -> PathBuf {
+        self.real_local.join(r"ClaudeSwitcher\slots")
+    }
+    fn slot_data_dir(&self, data_root: &Path) -> PathBuf {
+        crate::slot::data_dir(data_root, &self.pkg.family)
+    }
+    fn slot_prepare(&self, data_root: &Path) -> AppResult<()> {
+        crate::slot::prepare(data_root, &self.pkg.family, &self.real_windowsapps())
+    }
+    fn slot_ready(&self, data_root: &Path) -> bool {
+        crate::slot::is_ready(data_root, &self.pkg.family, &self.real_windowsapps())
+    }
+    fn slot_remove(&self, data_root: &Path) -> AppResult<()> {
+        let slot_dir = data_root.parent().ok_or_else(|| AppError::io("slot has no parent folder"))?;
+        crate::slot::remove(slot_dir)
+    }
+    fn launch_slot(&self, data_root: &Path) -> AppResult<()> {
+        crate::slot::launch(data_root, &self.real_windowsapps().join("claude-desktop.exe"))
+    }
+    fn slot_move_label(&self, data_root: &Path) -> Option<String> {
+        crate::slot::move_label(data_root)
+    }
+    fn slot_import(&self, data_root: &Path) -> AppResult<usize> {
+        crate::slot::import_sessions(&self.real_local, data_root, &self.pkg.family)
     }
 }
