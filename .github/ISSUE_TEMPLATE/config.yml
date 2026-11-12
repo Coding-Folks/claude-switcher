@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Coding-Folks/claude-switcher/security/advisories/new
+    about: Please report security issues privately.
+  - name: Troubleshooting guide
+    url: https://github.com/Coding-Folks/claude-switcher/blob/main/docs/TROUBLESHOOTING.md
+    about: Common problems and their fixes.

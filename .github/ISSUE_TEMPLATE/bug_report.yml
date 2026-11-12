@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Security problems go to SECURITY.md, not here.
+        Please remove personal data (user names, paths, account e-mails) from logs before pasting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Account mode
+      options:
+        - User Windows ini (same Windows user)
+        - User Windows terpisah (separate Windows user)
+        - Utama (main account)
+        - Not about a specific account
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Claude Switcher version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Desktop version
+      description: Claude Desktop → Help → About, or the folder name under C:\Program Files\WindowsApps\Claude_*
+      placeholder: "5.1231.2.0"
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: The relevant lines of %LOCALAPPDATA%\ClaudeSwitcher\logs\app.log (it never contains passwords).
+      render: text

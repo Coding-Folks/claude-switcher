@@ -1,0 +1,7 @@
+# Normalise text to LF in the repo; Windows checkouts get CRLF where Git is set to.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.woff2 binary
+*.exe binary
