@@ -3,3 +3,4 @@ node_modules/
 *.log
 .superpowers/
 .taste-skill/
+tests-ui/test-results/
