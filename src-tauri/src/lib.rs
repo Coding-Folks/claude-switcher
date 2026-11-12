@@ -7,6 +7,7 @@ pub mod winuser;
 pub mod share;
 pub mod claude_pkg;
 pub mod launcher;
+pub mod monitor;
 
 pub fn run() {
     tauri::Builder::default()
