@@ -4,6 +4,7 @@ pub mod store;
 pub mod vault;
 pub mod elevated;
 pub mod winuser;
+pub mod share;
 
 pub fn run() {
     tauri::Builder::default()

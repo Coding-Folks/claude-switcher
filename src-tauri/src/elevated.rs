@@ -62,7 +62,7 @@ pub fn run_elevated(op: &ElevatedOp, secret: Option<&Path>) -> AppResult<()> {
             crate::winuser::hide(name)
         }
         ElevatedOp::SetPassword { name } => crate::winuser::set_password(name, &read_secret(secret)?),
-        ElevatedOp::DeleteUser { name } => crate::winuser::delete(name),
+        ElevatedOp::DeleteUser { name } => crate::winuser::delete_with_profile(name),
     }
 }
 

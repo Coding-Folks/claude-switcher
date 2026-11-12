@@ -68,6 +68,69 @@ pub fn delete(name: &str) -> AppResult<()> {
     Ok(())
 }
 
+const PROFILE_LIST: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+
+/// The account's SID as `S-1-…`, or None if no such local account exists.
+pub fn sid_of(name: &str) -> Option<String> {
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows::Win32::Security::{LookupAccountNameW, PSID, SID_NAME_USE};
+    let n = HSTRING::from(name);
+    let (mut sid_len, mut dom_len) = (0u32, 0u32);
+    let mut kind = SID_NAME_USE::default();
+    unsafe {
+        let _ = LookupAccountNameW(PCWSTR::null(), PCWSTR(n.as_ptr()), None, &mut sid_len, None, &mut dom_len, &mut kind);
+        if sid_len == 0 {
+            return None;
+        }
+        let mut sid = vec![0u8; sid_len as usize];
+        let mut dom = vec![0u16; dom_len as usize];
+        LookupAccountNameW(
+            PCWSTR::null(), PCWSTR(n.as_ptr()), Some(PSID(sid.as_mut_ptr() as *mut _)), &mut sid_len,
+            Some(PWSTR(dom.as_mut_ptr())), &mut dom_len, &mut kind,
+        ).ok()?;
+        let mut s = PWSTR::null();
+        ConvertSidToStringSidW(PSID(sid.as_mut_ptr() as *mut _), &mut s).ok()?;
+        let out = s.to_string().ok();
+        let _ = LocalFree(Some(HLOCAL(s.0 as *mut _)));
+        out
+    }
+}
+
+/// The account's profile folder from the registry (exists once it has logged on).
+pub fn profile_path(name: &str) -> Option<std::path::PathBuf> {
+    let sid = sid_of(name)?;
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    let key = hklm.open_subkey(format!(r"{PROFILE_LIST}\{sid}")).ok()?;
+    let raw: String = key.get_value("ProfileImagePath").ok()?;
+    Some(std::path::PathBuf::from(expand_env(&raw)))
+}
+
+fn expand_env(s: &str) -> String {
+    let mut out = s.to_string();
+    for var in ["SystemDrive", "SystemRoot", "USERPROFILE"] {
+        if let Ok(v) = std::env::var(var) {
+            out = out.replace(&format!("%{var}%"), &v);
+        }
+    }
+    out
+}
+
+/// Elevated: deletes the account, its profile folder (never following junctions) and its ProfileList entry.
+pub fn delete_with_profile(name: &str) -> AppResult<()> {
+    let sid = sid_of(name);
+    let profile = profile_path(name);
+    delete(name)?;
+    if let Some(p) = profile {
+        crate::share::remove_profile_safely(&p)?;
+    }
+    if let Some(sid) = sid {
+        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+        let _ = hklm.delete_subkey_all(format!(r"{PROFILE_LIST}\{sid}"));
+    }
+    Ok(())
+}
+
 /// Works without admin.
 pub fn exists(name: &str) -> bool {
     let n = HSTRING::from(name);
@@ -87,5 +150,20 @@ mod tests {
     fn exists_finds_builtin_and_rejects_unknown() {
         assert!(exists("Administrator"));
         assert!(!exists("claude-nope-zz9"));
+    }
+
+    #[test]
+    fn sid_and_profile_of_current_user() {
+        let me = std::env::var("USERNAME").unwrap();
+        let sid = sid_of(&me).unwrap();
+        assert!(sid.starts_with("S-1-5-21-"), "{sid}");
+        let profile = profile_path(&me).unwrap();
+        assert_eq!(profile.to_string_lossy().to_lowercase(), std::env::var("USERPROFILE").unwrap().to_lowercase());
+    }
+
+    #[test]
+    fn unknown_user_has_no_sid_or_profile() {
+        assert!(sid_of("claude-nope-zz9").is_none());
+        assert!(profile_path("claude-nope-zz9").is_none());
     }
 }
