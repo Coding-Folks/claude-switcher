@@ -1,4 +1,4 @@
-# Uji integrasi manual — Claude Switcher
+# Uji integrasi manual — Claude Lolos Lolos Lolos Lolos Lolos (lewat Impor riwayat, yang menutup slot dengan jalur yang sama) Lolos Lolos (menurut pengguna) Lolos ||||||||Switcher
 
 Langkah-langkah ini menyentuh Windows sungguhan (membuat dan menghapus user, UAC), jadi tidak bisa
 dijalankan oleh `cargo test`. Jalankan dengan build release atau `src-tauri/target/debug/claude-switcher.exe`.
@@ -58,3 +58,11 @@ Tanggal, versi, dan catatan:
   - Tab membuat panel tersembunyi. Diperbaiki di `8cc41a1`: fokus berputar di dalam panel.
   - Ikon tray tidak bisa dibuka dengan keyboard, karena `tray-icon` 0.25 mengabaikan pemilihan via keyboard.
     Diperbaiki di `f915404`: ditambahkan shortcut global Ctrl+Alt+K dan item menu **Buka panel**.
+- **2026-11-12**, commit `14a2eb6` (build dev): langkah slot S1–S8 **lolos**. Utama, Slot A, dan Slot B jalan bersamaan
+  di user Windows yang sama, ditambah satu akun user terpisah (empat akun sekaligus).
+  - Junction `MicrosoftWindowsApps` terbukti mencegah slot menghapus entri "Open with": log slot mencatat
+    "Open with" entry written for 27 file types.
+  - Folder `PackagesClaude_*LocalCacheLocalClaudeSwitcher` adalah proyeksi MSIX dari folder yang sama
+    (File ID identik), bukan salinan. Setelah slot dihapus, proyeksinya ikut bersih.
+  - Saat S2, tombol **Buat akun** dan pilihan mode tersembunyi di bawah batas tinggi panel 480px. Diperbaiki di
+    `14a2eb6`: form di-scroll ke tampilan dan tinggi panel mengikuti layar.
