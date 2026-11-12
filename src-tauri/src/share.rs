@@ -199,7 +199,11 @@ fn ps_quote(p: &Path) -> String {
 /// A real folder in the way is renamed to `.claude.bak-<time>`; a junction to elsewhere is replaced.
 /// Prints `junction=ok` or `junction=fail`.
 pub fn junction_ps_snippet(main_claude_dir: &Path) -> String {
-    let t = ps_quote(main_claude_dir);
+    // The script compares paths as text, so hand it the final long form (no 8.3 names, no \\?\).
+    let long = std::fs::canonicalize(main_claude_dir)
+        .map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\").to_string()))
+        .unwrap_or_else(|_| main_claude_dir.to_path_buf());
+    let t = ps_quote(&long);
     format!(
         "$ErrorActionPreference='Stop'; $t={t}; $l=Join-Path $env:USERPROFILE '.claude'; \
          try {{ \
@@ -348,7 +352,7 @@ mod tests {
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                &junction_ps_snippet(&target),
+                &junction_ps_snippet(&short_path(&target)), // as on CI: an 8.3 short path
             ])
             .env("USERPROFILE", &profile)
             .output()
