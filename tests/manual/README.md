@@ -30,6 +30,22 @@ Akun uji: label **Tes Integrasi** → user Windows `claude-tes-integrasi`.
 Log aplikasi: `%LOCALAPPDATA%\ClaudeSwitcher\logs\app.log` (tidak pernah berisi password).
 Daftar akun: `%APPDATA%\ClaudeSwitcher\accounts.json`.
 
+## Akun di user Windows yang sama
+
+Mode **User Windows ini** (spec `2026-11-12-same-user-slots-design.md`). Folder slot:
+`%LOCALAPPDATA%\ClaudeSwitcher\slots\<id-akun>\Local`.
+
+| # | Langkah | Yang diharapkan | Hasil |
+|---|---|---|---|
+| S1 | **Tambah akun** "Slot A", mode **User Windows ini** | Tidak ada UAC; Claude baru terbuka di layar login | |
+| S2 | **Tambah akun** "Slot B", mode yang sama | Utama, Slot A, dan Slot B jalan bersamaan; panel menampilkan RAM masing-masing | |
+| S3 | Login di Slot A dan Slot B saat Utama terbuka | Masing-masing masuk ke akunnya sendiri (callback login tidak nyasar ke instance lain) | |
+| S4 | ⋯ → **Impor riwayat** di Slot A | Tanpa UAC; sesi Code muncul setelah Slot A dibuka lagi | |
+| S5 | ⋯ → **Tutup** di Slot A | Hanya Slot A yang mati; Utama dan Slot B tetap jalan | |
+| S6 | Setelah S1–S5: klik kanan file `.txt` → **Open with** | Claude masih ada di daftar (junction WindowsApps mencegah entri terhapus) | |
+| S7 | Buka Cowork di Utama dan Slot A bersamaan | Catat bentrok bila ada | |
+| S8 | ⋯ → **Hapus** Slot A | Dialog menyebut login dan data ikut terhapus, tanpa UAC; folder `slots\<id>` hilang; Utama dan Slot B tidak terpengaruh; `%LOCALAPPDATA%\Microsoft\WindowsApps\claude-desktop.exe` masih ada | |
+
 ## Hasil
 
 Tanggal, versi, dan catatan:
