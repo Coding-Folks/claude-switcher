@@ -1,5 +1,5 @@
 // Renders the brand SVG to PNGs (app icon source, README banner, social preview) with installed Edge.
-// Run from tests-ui (it has @playwright/test): node ../scripts/render-brand.mjs
+// Run: node tests-ui/scripts/render-brand.mjs  (uses tests-ui's @playwright/test and installed Edge)
 // Optional: put instrument-sans-latin-wght-normal.woff2 (OFL) next to this script for the brand font.
 import { chromium } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, '..');
+const repo = join(here, '..', '..');
 const mark = readFileSync(join(repo, 'assets/brand/logo-mark.svg'), 'utf8');
 let fontCss = '';
 try {
