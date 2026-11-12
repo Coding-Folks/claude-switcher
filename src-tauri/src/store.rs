@@ -87,7 +87,12 @@ impl Store {
         }
         let tmp = self.path.with_file_name("accounts.json.tmp");
         let body = serde_json::to_string_pretty(&FileV1 { version: 1, accounts: accounts.to_vec() }).map_err(AppError::io)?;
-        std::fs::write(&tmp, body)?;
+        {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(body.as_bytes())?;
+            f.sync_all()?; // on disk before the rename, so a power cut cannot leave an empty accounts.json
+        }
         std::fs::rename(&tmp, &self.path)?;
         Ok(())
     }

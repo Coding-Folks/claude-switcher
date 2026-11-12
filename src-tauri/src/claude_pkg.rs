@@ -42,7 +42,9 @@ pub fn parse_appx_json(s: &str) -> AppResult<ClaudePkg> {
 }
 
 pub fn detect() -> AppResult<ClaudePkg> {
-    let out = std::process::Command::new("powershell")
+    let ps = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| String::from(r"C:\Windows")))
+        .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    let out = std::process::Command::new(ps)
         .args(["-NoProfile", "-NonInteractive", "-Command",
                "Get-AppxPackage -Name Claude | Select-Object Name,PackageFamilyName,InstallLocation | ConvertTo-Json -Compress"])
         .output()?;

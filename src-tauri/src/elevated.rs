@@ -283,7 +283,7 @@ pub fn request(op: ElevatedOp, secret: Option<&Zeroizing<String>>) -> AppResult<
         return Err(if e.code() == ERROR_CANCELLED.to_hresult() {
             AppError::new(ErrorCode::UacCancelled, "err.uac_cancelled")
         } else {
-            AppError::win32(e.code().0 as u32, "ShellExecuteExW")
+            AppError::new(ErrorCode::Io, "err.generic").with_detail(format!("ShellExecuteExW failed (HRESULT 0x{:08X})", e.code().0 as u32))
         });
     }
     unsafe {

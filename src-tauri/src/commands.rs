@@ -6,7 +6,7 @@ use crate::flows::{AccountView, AddMode, Flows, OpenOutcome, RepairReport};
 use crate::platform::{Platform, WinPlatform};
 use crate::store::Account;
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -16,7 +16,8 @@ pub type AppFlows = Flows<WinPlatform>;
 pub struct AppState {
     pub flows: Result<Arc<AppFlows>, AppError>,
     /// True while an operation runs, so the panel stays open when a UAC prompt takes focus.
-    pub busy: Arc<AtomicBool>,
+    /// Number of operations running (a counter, so overlapping ones do not clear it early).
+    pub busy: Arc<AtomicUsize>,
 }
 
 impl AppState {
@@ -41,12 +42,12 @@ struct Progress {
 
 async fn blocking<T: Send + 'static>(
     app: &AppHandle,
-    busy: &Arc<AtomicBool>,
+    busy: &Arc<AtomicUsize>,
     job: impl FnOnce() -> AppResult<T> + Send + 'static,
 ) -> AppResult<T> {
-    busy.store(true, Ordering::SeqCst);
+    busy.fetch_add(1, Ordering::SeqCst);
     let out = tauri::async_runtime::spawn_blocking(job).await.map_err(AppError::io).and_then(|r| r);
-    busy.store(false, Ordering::SeqCst);
+    busy.fetch_sub(1, Ordering::SeqCst);
     if let Err(e) = &out {
         crate::applog::error("command failed", &[("code", &format!("{:?}", e.code)), ("detail", e.detail.as_deref().unwrap_or(""))]);
     }

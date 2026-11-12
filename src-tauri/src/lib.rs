@@ -18,7 +18,7 @@ pub mod tray;
 
 use commands::AppState;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{Manager, WindowEvent};
 
@@ -34,7 +34,7 @@ pub fn run() {
     if let Err(e) = &flows {
         applog::error("startup", &[("code", &format!("{:?}", e.code)), ("detail", e.detail.as_deref().unwrap_or(""))]);
     }
-    let busy = Arc::new(AtomicBool::new(false));
+    let busy = Arc::new(AtomicUsize::new(0));
     let install_dir = flows.as_ref().ok().map(|f| f.platform().install_dir());
 
     tauri::Builder::default()
@@ -77,7 +77,7 @@ pub fn run() {
                 let (w2, busy) = (w.clone(), busy.clone());
                 w.on_window_event(move |e| {
                     if let WindowEvent::Focused(false) = e {
-                        if !busy.load(Ordering::SeqCst) {
+                        if busy.load(Ordering::SeqCst) == 0 {
                             let _ = w2.hide();
                         }
                     }

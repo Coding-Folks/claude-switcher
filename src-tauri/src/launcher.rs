@@ -173,8 +173,12 @@ pub fn close(root_pid: u32, as_user: Option<(&str, &Zeroizing<String>)>) -> AppR
     let args = format!("/PID {root_pid} /T /F");
     match as_user {
         None => {
-            std::process::Command::new(system32("taskkill.exe")).args(args.split(' ')).output()?;
-            Ok(())
+            let out = std::process::Command::new(system32("taskkill.exe")).args(args.split(' ')).output()?;
+            // 128 = no such process: it already ended, which is what we wanted.
+            match out.status.code() {
+                Some(0) | Some(128) => Ok(()),
+                _ => Err(AppError::io(format!("taskkill failed: {}", String::from_utf8_lossy(&out.stderr).trim()))),
+            }
         }
         Some((user, pw)) => run_as(user, pw, &system32("taskkill.exe"), &args, Some(Duration::from_secs(15))).map(|_| ()),
     }
