@@ -2,13 +2,14 @@
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use rand::{rngs::OsRng, seq::SliceRandom, Rng};
-pub use zeroize::Zeroizing;
 use zeroize::Zeroize;
+pub use zeroize::Zeroizing;
 
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{ERROR_NOT_FOUND, FILETIME};
 use windows::Win32::Security::Credentials::{
-    CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+    CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS,
+    CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
 };
 
 const UPPER: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -25,7 +26,8 @@ fn not_found(e: &windows::core::Error) -> bool {
 }
 
 pub fn put(user: &str, secret: &Zeroizing<String>) -> AppResult<()> {
-    let mut blob: Zeroizing<Vec<u8>> = Zeroizing::new(secret.encode_utf16().flat_map(u16::to_le_bytes).collect());
+    let mut blob: Zeroizing<Vec<u8>> =
+        Zeroizing::new(secret.encode_utf16().flat_map(u16::to_le_bytes).collect());
     let name = target(user);
     let cred = CREDENTIALW {
         Flags: CRED_FLAGS(0),
@@ -55,7 +57,10 @@ pub fn get(user: &str) -> AppResult<Zeroizing<String>> {
     let secret = unsafe {
         let c = &*out;
         let bytes = std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize);
-        let mut units: Vec<u16> = bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+        let mut units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
         let s = String::from_utf16_lossy(&units);
         units.zeroize();
         CredFree(out as *const _);
@@ -79,7 +84,13 @@ pub fn generate_password() -> Zeroizing<String> {
     let classes = [UPPER, LOWER, DIGITS, SYMBOLS];
     let all: Vec<char> = classes.concat().chars().collect();
     let mut chars: Zeroizing<Vec<char>> = Zeroizing::new(
-        classes.iter().map(|c| { let v: Vec<char> = c.chars().collect(); v[rng.gen_range(0..v.len())] }).collect(),
+        classes
+            .iter()
+            .map(|c| {
+                let v: Vec<char> = c.chars().collect();
+                v[rng.gen_range(0..v.len())]
+            })
+            .collect(),
     );
     while chars.len() < 32 {
         chars.push(all[rng.gen_range(0..all.len())]);
@@ -87,7 +98,6 @@ pub fn generate_password() -> Zeroizing<String> {
     chars.shuffle(&mut rng);
     Zeroizing::new(chars.iter().collect())
 }
-
 
 #[cfg(test)]
 mod tests {

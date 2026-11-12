@@ -26,7 +26,7 @@ Diuji di mesin target (Windows 11, Claude Desktop MSIX 5.1231.2.0):
 | `CLAUDE_USER_DATA_DIR` | Ada di kode, tetapi dinonaktifkan di build rilis (proses langsung keluar). |
 | Sandboxie-Plus | Claude tidak jalan di sandbox (kemungkinan karena MSIX tidak didukung). |
 | **User Windows terpisah + junction `~/.claude`** | **Berhasil**: instance ketiga jalan bersamaan, login OK, skills terbaca. |
-| Override `LOCALAPPDATA` + `Claude-Data\claude_<family>` yang dibuat lebih dulu | **Banyak slot** di user Windows yang sama (diuji 2026-11-12, Claude 5.1231.2.0); lihat `2026-11-12-same-user-slots-design.md`. Baris "Override `LOCALAPPDATA`" di atas hanya berlaku bila folder itu tidak disiapkan. |
+| Override `LOCALAPPDATA` + `Claude-Data\claude_<family>` yang dibuat lebih dulu | **Banyak slot** di user Windows yang sama (diuji 2026-11-12, Claude 5.1231.2.0); lihat `same-user-slots.md`. Baris "Override `LOCALAPPDATA`" di atas hanya berlaku bila folder itu tidak disiapkan. |
 
 Kesimpulan: **satu akun Claude = satu user Windows lokal tersembunyi.**
 

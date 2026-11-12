@@ -13,7 +13,11 @@ fn subdirs(dir: &Path) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.metadata().map(|m| m.is_dir() && m.file_attributes() & REPARSE == 0).unwrap_or(false))
+        .filter(|e| {
+            e.metadata()
+                .map(|m| m.is_dir() && m.file_attributes() & REPARSE == 0)
+                .unwrap_or(false)
+        })
         .map(|e| e.path())
         .collect();
     v.sort();
@@ -21,17 +25,25 @@ fn subdirs(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn name_starts(p: &Path, prefix: &str) -> bool {
-    p.file_name().map(|n| n.to_string_lossy().to_lowercase().starts_with(prefix)).unwrap_or(false)
+    p.file_name()
+        .map(|n| n.to_string_lossy().to_lowercase().starts_with(prefix))
+        .unwrap_or(false)
 }
 
 /// The Code session folders Claude Desktop may use under a `%LOCALAPPDATA%`: its own data folder
 /// (`Claude-Data\claude_*`) and the MSIX-virtualized roaming folder (`Packages\Claude_*\LocalCache\Roaming\Claude`).
 pub fn sessions_dirs(local_appdata: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    for d in subdirs(&local_appdata.join("Claude-Data")).into_iter().filter(|d| name_starts(d, "claude_")) {
+    for d in subdirs(&local_appdata.join("Claude-Data"))
+        .into_iter()
+        .filter(|d| name_starts(d, "claude_"))
+    {
         out.push(d.join("claude-code-sessions"));
     }
-    for d in subdirs(&local_appdata.join("Packages")).into_iter().filter(|d| name_starts(d, "claude_")) {
+    for d in subdirs(&local_appdata.join("Packages"))
+        .into_iter()
+        .filter(|d| name_starts(d, "claude_"))
+    {
         out.push(d.join(r"LocalCache\Roaming\Claude\claude-code-sessions"));
     }
     out.retain(|p| p.is_dir());
@@ -39,7 +51,11 @@ pub fn sessions_dirs(local_appdata: &Path) -> Vec<PathBuf> {
 }
 
 fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().collect();
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
     entries.sort_by_key(|e| e.path());
     for e in entries {
         let Ok(md) = e.metadata() else { continue };
@@ -112,10 +128,14 @@ mod tests {
     fn finds_sessions_dirs_in_claude_data_and_msix_cache() {
         let local = tmp();
         let a = local.join(r"Claude-Data\claude_pzs8sxrjxfjjc\claude-code-sessions");
-        let b = local.join(r"Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions");
+        let b = local
+            .join(r"Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions");
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
-        std::fs::create_dir_all(local.join(r"Packages\Other_123\LocalCache\Roaming\Claude\claude-code-sessions")).unwrap();
+        std::fs::create_dir_all(
+            local.join(r"Packages\Other_123\LocalCache\Roaming\Claude\claude-code-sessions"),
+        )
+        .unwrap();
         let mut got = sessions_dirs(&local);
         got.sort();
         let mut want = vec![a, b];
@@ -135,12 +155,24 @@ mod tests {
         touch(&src1.join(r"acct-A\org-1\local_existing.json"), "src");
         touch(&src1.join(r"acct-A\org-1\local_one.json"), "1");
         touch(&src2.join(r"acct-A\org-2\local_two.json"), "2");
-        touch(&src2.join(r"acct-A\org-1\local_one.json"), "1-dup-in-second-source");
+        touch(
+            &src2.join(r"acct-A\org-1\local_one.json"),
+            "1-dup-in-second-source",
+        );
         touch(&src1.join(r"acct-B\org-9\local_private.json"), "B");
 
         let plan = import_plan(&[src1.clone(), src2.clone()], &dest);
-        let targets: Vec<String> = plan.iter().map(|(_, to)| to.strip_prefix(&dest).unwrap().display().to_string()).collect();
-        assert_eq!(targets, vec![r"acct-A\org-1\local_one.json".to_string(), r"acct-A\org-2\local_two.json".to_string()]);
+        let targets: Vec<String> = plan
+            .iter()
+            .map(|(_, to)| to.strip_prefix(&dest).unwrap().display().to_string())
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                r"acct-A\org-1\local_one.json".to_string(),
+                r"acct-A\org-2\local_two.json".to_string()
+            ]
+        );
         assert_eq!(plan[0].0, src1.join(r"acct-A\org-1\local_one.json")); // first source wins
     }
 

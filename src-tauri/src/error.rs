@@ -27,7 +27,11 @@ pub struct AppError {
 
 impl AppError {
     pub fn new(code: ErrorCode, message_id: &'static str) -> Self {
-        Self { code, message_id, detail: None }
+        Self {
+            code,
+            message_id,
+            detail: None,
+        }
     }
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.detail = Some(detail.into());
@@ -37,13 +41,19 @@ impl AppError {
         Self::new(ErrorCode::Io, "err.generic").with_detail(e.to_string())
     }
     pub fn win32(code: u32, what: &str) -> Self {
-        Self::new(ErrorCode::Win32(code), "err.generic").with_detail(format!("{what} (Win32 {code})"))
+        Self::new(ErrorCode::Win32(code), "err.generic")
+            .with_detail(format!("{what} (Win32 {code})"))
     }
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {}", self.code, self.detail.as_deref().unwrap_or(self.message_id))
+        write!(
+            f,
+            "{:?} {}",
+            self.code,
+            self.detail.as_deref().unwrap_or(self.message_id)
+        )
     }
 }
 impl std::error::Error for AppError {}

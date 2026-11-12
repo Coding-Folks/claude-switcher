@@ -32,7 +32,7 @@ Daftar akun: `%APPDATA%\ClaudeSwitcher\accounts.json`.
 
 ## Akun di user Windows yang sama
 
-Mode **User Windows ini** (spec `2026-11-12-same-user-slots-design.md`). Folder slot:
+Mode **User Windows ini** (spec `same-user-slots.md`). Folder slot:
 `%LOCALAPPDATA%\ClaudeSwitcher\slots\<id-akun>\Local`.
 
 | # | Langkah | Yang diharapkan | Hasil |

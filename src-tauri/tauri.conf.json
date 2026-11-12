@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Claude Switcher",
   "version": "0.1.0",
-  "identifier": "id.codingfolks.claude-switcher",
+  "identifier": "dev.codingfolks.claude-switcher",
   "build": {
     "frontendDist": "../ui"
   },
@@ -29,10 +29,23 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "windows": {
-      "nsis": { "installMode": "perMachine" }
-    }
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    },
+    "publisher": "Coding Folks",
+    "copyright": "© 2026 Coding Folks. MIT License.",
+    "category": "Utility",
+    "shortDescription": "Run several Claude Desktop accounts side by side (unofficial)",
+    "longDescription": "Claude Switcher is an unofficial, open-source Windows tray app by Coding Folks. It runs several Claude Desktop accounts at the same time, either as slots of your own Windows user or as hidden Windows users, while sharing your skills, plugins and memory. Not affiliated with or endorsed by Anthropic.",
+    "homepage": "https://github.com/Coding-Folks/claude-switcher"
   }
 }

@@ -37,13 +37,21 @@ pub fn parse_appx_json(s: &str) -> AppResult<ClaudePkg> {
     entries
         .into_iter()
         .find(|e| e.name == "Claude")
-        .map(|e| ClaudePkg { family: e.package_family_name, install_dir: PathBuf::from(e.install_location) })
+        .map(|e| ClaudePkg {
+            family: e.package_family_name,
+            install_dir: PathBuf::from(e.install_location),
+        })
         .ok_or_else(missing)
 }
 
 pub fn detect() -> AppResult<ClaudePkg> {
-    let ps = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| String::from(r"C:\Windows")))
-        .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    let ps = std::path::PathBuf::from(
+        std::env::var("SystemRoot").unwrap_or_else(|_| String::from(r"C:\Windows")),
+    )
+    .join("System32")
+    .join("WindowsPowerShell")
+    .join("v1.0")
+    .join("powershell.exe");
     let out = std::process::Command::new(ps)
         .args(["-NoProfile", "-NonInteractive", "-Command",
                "Get-AppxPackage -Name Claude | Select-Object Name,PackageFamilyName,InstallLocation | ConvertTo-Json -Compress"])
@@ -70,11 +78,18 @@ mod tests {
     }
     #[test]
     fn missing_package_is_claude_missing() {
-        assert_eq!(parse_appx_json("").unwrap_err().code, ErrorCode::ClaudeMissing);
-        assert_eq!(parse_appx_json("[]").unwrap_err().code, ErrorCode::ClaudeMissing);
+        assert_eq!(
+            parse_appx_json("").unwrap_err().code,
+            ErrorCode::ClaudeMissing
+        );
+        assert_eq!(
+            parse_appx_json("[]").unwrap_err().code,
+            ErrorCode::ClaudeMissing
+        );
     }
     #[test]
-    fn detects_installed_claude() {
+    fn live_detects_installed_claude() {
+        // Needs Claude Desktop installed (skipped on CI with --skip live_).
         let p = detect().unwrap();
         assert!(p.family.starts_with("Claude_"));
         assert!(p.install_dir.join("app").join("Claude.exe").exists());

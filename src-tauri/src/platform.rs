@@ -59,10 +59,22 @@ pub struct WinPlatform {
 impl WinPlatform {
     pub fn new() -> AppResult<Self> {
         let pkg = crate::claude_pkg::detect()?;
-        let home = std::env::var_os("USERPROFILE").map(PathBuf::from).ok_or_else(|| AppError::io("USERPROFILE not set"))?;
-        let main_sid = std::env::var("USERNAME").ok().and_then(|u| crate::winuser::sid_of(&u));
-        let real_local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
-        Ok(Self { pkg, main_claude_dir: home.join(".claude"), main_sid, sids: Mutex::new(HashMap::new()), real_local })
+        let home = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .ok_or_else(|| AppError::io("USERPROFILE not set"))?;
+        let main_sid = std::env::var("USERNAME")
+            .ok()
+            .and_then(|u| crate::winuser::sid_of(&u));
+        let real_local = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
+        Ok(Self {
+            pkg,
+            main_claude_dir: home.join(".claude"),
+            main_sid,
+            sids: Mutex::new(HashMap::new()),
+            real_local,
+        })
     }
 
     fn real_windowsapps(&self) -> PathBuf {
@@ -74,7 +86,8 @@ impl WinPlatform {
     }
 
     fn profile(&self, user: &str) -> AppResult<PathBuf> {
-        crate::winuser::profile_path(user).ok_or_else(|| AppError::new(ErrorCode::JunctionBroken, "err.junction_broken"))
+        crate::winuser::profile_path(user)
+            .ok_or_else(|| AppError::new(ErrorCode::JunctionBroken, "err.junction_broken"))
     }
 }
 
@@ -108,7 +121,9 @@ impl Platform for WinPlatform {
         crate::launcher::bootstrap(user, pw, &self.pkg, &self.main_claude_dir)
     }
     fn junction_ok(&self, user: &str) -> bool {
-        self.profile(user).map(|p| crate::share::is_junction_to(&p.join(".claude"), &self.main_claude_dir)).unwrap_or(false)
+        self.profile(user)
+            .map(|p| crate::share::is_junction_to(&p.join(".claude"), &self.main_claude_dir))
+            .unwrap_or(false)
     }
     fn launch_main(&self) -> AppResult<()> {
         crate::launcher::launch_main()
@@ -159,11 +174,16 @@ impl Platform for WinPlatform {
         crate::slot::has_data(data_root, &self.pkg.family)
     }
     fn slot_remove(&self, data_root: &Path) -> AppResult<()> {
-        let slot_dir = data_root.parent().ok_or_else(|| AppError::io("slot has no parent folder"))?;
+        let slot_dir = data_root
+            .parent()
+            .ok_or_else(|| AppError::io("slot has no parent folder"))?;
         crate::slot::remove(&self.slots_dir(), slot_dir)
     }
     fn launch_slot(&self, data_root: &Path) -> AppResult<()> {
-        crate::slot::launch(data_root, &self.real_windowsapps().join("claude-desktop.exe"))
+        crate::slot::launch(
+            data_root,
+            &self.real_windowsapps().join("claude-desktop.exe"),
+        )
     }
     fn slot_move_label(&self, data_root: &Path) -> Option<String> {
         crate::slot::move_label(data_root)

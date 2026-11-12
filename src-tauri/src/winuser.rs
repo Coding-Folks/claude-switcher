@@ -5,15 +5,21 @@ use crate::error::{AppError, AppResult};
 use crate::vault::Zeroizing;
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::NetworkManagement::NetManagement::{
-    NetApiBufferFree, NetUserAdd, NetUserDel, NetUserGetInfo, NetUserSetInfo, UF_DONT_EXPIRE_PASSWD,
-    UF_PASSWD_CANT_CHANGE, UF_SCRIPT, USER_INFO_1, USER_INFO_1003, USER_INFO_1008, USER_PRIV_USER,
+    NetApiBufferFree, NetUserAdd, NetUserDel, NetUserGetInfo, NetUserSetInfo,
+    UF_DONT_EXPIRE_PASSWD, UF_PASSWD_CANT_CHANGE, UF_SCRIPT, USER_INFO_1, USER_INFO_1003,
+    USER_INFO_1008, USER_PRIV_USER,
 };
 
-const USER_LIST: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList";
+const USER_LIST: &str =
+    r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList";
 const NERR_USER_NOT_FOUND: u32 = 2221;
 
 fn check(code: u32, what: &str) -> AppResult<()> {
-    if code == 0 { Ok(()) } else { Err(AppError::win32(code, what)) }
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(AppError::win32(code, what))
+    }
 }
 
 /// NUL-terminated UTF-16 copy of a secret, wiped on drop.
@@ -35,7 +41,10 @@ pub fn create(name: &str, password: &Zeroizing<String>) -> AppResult<()> {
         usri1_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD | UF_PASSWD_CANT_CHANGE,
         usri1_script_path: PWSTR::null(),
     };
-    check(unsafe { NetUserAdd(PCWSTR::null(), 1, &info as *const _ as *const u8, None) }, "NetUserAdd")
+    check(
+        unsafe { NetUserAdd(PCWSTR::null(), 1, &info as *const _ as *const u8, None) },
+        "NetUserAdd",
+    )
 }
 
 pub fn hide(name: &str) -> AppResult<()> {
@@ -48,15 +57,35 @@ pub fn hide(name: &str) -> AppResult<()> {
 pub fn set_password(name: &str, password: &Zeroizing<String>) -> AppResult<()> {
     let n = HSTRING::from(name);
     let mut p = wide_secret(password);
-    let info = USER_INFO_1003 { usri1003_password: PWSTR(p.as_mut_ptr()) };
+    let info = USER_INFO_1003 {
+        usri1003_password: PWSTR(p.as_mut_ptr()),
+    };
     check(
-        unsafe { NetUserSetInfo(PCWSTR::null(), PCWSTR(n.as_ptr()), 1003, &info as *const _ as *const u8, None) },
+        unsafe {
+            NetUserSetInfo(
+                PCWSTR::null(),
+                PCWSTR(n.as_ptr()),
+                1003,
+                &info as *const _ as *const u8,
+                None,
+            )
+        },
         "NetUserSetInfo",
     )?;
     // Same flags as at creation: this also clears "disabled" and "locked out", so Perbaiki fixes those too.
-    let flags = USER_INFO_1008 { usri1008_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD | UF_PASSWD_CANT_CHANGE };
+    let flags = USER_INFO_1008 {
+        usri1008_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD | UF_PASSWD_CANT_CHANGE,
+    };
     check(
-        unsafe { NetUserSetInfo(PCWSTR::null(), PCWSTR(n.as_ptr()), 1008, &flags as *const _ as *const u8, None) },
+        unsafe {
+            NetUserSetInfo(
+                PCWSTR::null(),
+                PCWSTR(n.as_ptr()),
+                1008,
+                &flags as *const _ as *const u8,
+                None,
+            )
+        },
         "NetUserSetInfo(flags)",
     )
 }
@@ -90,16 +119,30 @@ pub fn sid_of(name: &str) -> Option<String> {
     let (mut sid_len, mut dom_len) = (0u32, 0u32);
     let mut kind = SID_NAME_USE::default();
     unsafe {
-        let _ = LookupAccountNameW(PCWSTR::null(), PCWSTR(n.as_ptr()), None, &mut sid_len, None, &mut dom_len, &mut kind);
+        let _ = LookupAccountNameW(
+            PCWSTR::null(),
+            PCWSTR(n.as_ptr()),
+            None,
+            &mut sid_len,
+            None,
+            &mut dom_len,
+            &mut kind,
+        );
         if sid_len == 0 {
             return None;
         }
         let mut sid = vec![0u8; sid_len as usize];
         let mut dom = vec![0u16; dom_len as usize];
         LookupAccountNameW(
-            PCWSTR::null(), PCWSTR(n.as_ptr()), Some(PSID(sid.as_mut_ptr() as *mut _)), &mut sid_len,
-            Some(PWSTR(dom.as_mut_ptr())), &mut dom_len, &mut kind,
-        ).ok()?;
+            PCWSTR::null(),
+            PCWSTR(n.as_ptr()),
+            Some(PSID(sid.as_mut_ptr() as *mut _)),
+            &mut sid_len,
+            Some(PWSTR(dom.as_mut_ptr())),
+            &mut dom_len,
+            &mut kind,
+        )
+        .ok()?;
         let mut s = PWSTR::null();
         ConvertSidToStringSidW(PSID(sid.as_mut_ptr() as *mut _), &mut s).ok()?;
         let out = s.to_string().ok();
@@ -130,24 +173,39 @@ fn expand_env(s: &str) -> String {
 /// Every (SID, profile folder) pair in the registry's ProfileList.
 pub fn profile_list() -> Vec<(String, std::path::PathBuf)> {
     let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
-    let Ok(list) = hklm.open_subkey(PROFILE_LIST) else { return vec![] };
+    let Ok(list) = hklm.open_subkey(PROFILE_LIST) else {
+        return vec![];
+    };
     list.enum_keys()
         .flatten()
         .filter_map(|sid| {
-            let raw: String = list.open_subkey(&sid).ok()?.get_value("ProfileImagePath").ok()?;
+            let raw: String = list
+                .open_subkey(&sid)
+                .ok()?
+                .get_value("ProfileImagePath")
+                .ok()?;
             Some((sid, std::path::PathBuf::from(expand_env(&raw))))
         })
         .collect()
 }
 
 /// Profiles whose folder is `<name>` or Windows' collision form `<name>.<something>`.
-pub fn profiles_named(name: &str, entries: &[(String, std::path::PathBuf)]) -> Vec<(String, std::path::PathBuf)> {
+pub fn profiles_named(
+    name: &str,
+    entries: &[(String, std::path::PathBuf)],
+) -> Vec<(String, std::path::PathBuf)> {
     let n = name.to_lowercase();
     entries
         .iter()
         .filter(|(_, p)| {
-            let f = p.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
-            f == n || f.strip_prefix(&n).map(|rest| rest.starts_with('.')).unwrap_or(false)
+            let f = p
+                .file_name()
+                .map(|f| f.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            f == n
+                || f.strip_prefix(&n)
+                    .map(|rest| rest.starts_with('.'))
+                    .unwrap_or(false)
         })
         .cloned()
         .collect()
@@ -210,7 +268,10 @@ mod tests {
         let sid = sid_of(&me).unwrap();
         assert!(sid.starts_with("S-1-5-21-"), "{sid}");
         let profile = profile_path(&me).unwrap();
-        assert_eq!(profile.to_string_lossy().to_lowercase(), std::env::var("USERPROFILE").unwrap().to_lowercase());
+        assert_eq!(
+            profile.to_string_lossy().to_lowercase(),
+            std::env::var("USERPROFILE").unwrap().to_lowercase()
+        );
     }
 
     #[test]
@@ -223,10 +284,22 @@ mod tests {
     fn finds_profiles_left_by_a_deleted_user() {
         use std::path::PathBuf;
         let entries = vec![
-            ("S-1-5-21-1-1001".to_string(), PathBuf::from(r"C:\Users\Irsal")),
-            ("S-1-5-21-1-1002".to_string(), PathBuf::from(r"C:\Users\claude-kantor")),
-            ("S-1-5-21-1-1003".to_string(), PathBuf::from(r"C:\Users\CLAUDE-KANTOR.MSI")),
-            ("S-1-5-21-1-1004".to_string(), PathBuf::from(r"C:\Users\claude-kantor-2")),
+            (
+                "S-1-5-21-1-1001".to_string(),
+                PathBuf::from(r"C:\Users\alice"),
+            ),
+            (
+                "S-1-5-21-1-1002".to_string(),
+                PathBuf::from(r"C:\Users\claude-kantor"),
+            ),
+            (
+                "S-1-5-21-1-1003".to_string(),
+                PathBuf::from(r"C:\Users\CLAUDE-KANTOR.MSI"),
+            ),
+            (
+                "S-1-5-21-1-1004".to_string(),
+                PathBuf::from(r"C:\Users\claude-kantor-2"),
+            ),
         ];
         let found = profiles_named("claude-kantor", &entries);
         let got: Vec<&str> = found.iter().map(|(s, _)| s.as_str()).collect();
@@ -236,6 +309,8 @@ mod tests {
     #[test]
     fn profile_list_includes_current_user() {
         let me = std::env::var("USERPROFILE").unwrap().to_lowercase();
-        assert!(profile_list().iter().any(|(_, p)| p.to_string_lossy().to_lowercase() == me));
+        assert!(profile_list()
+            .iter()
+            .any(|(_, p)| p.to_string_lossy().to_lowercase() == me));
     }
 }

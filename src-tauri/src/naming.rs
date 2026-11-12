@@ -9,8 +9,12 @@ const FALLBACK: &str = "akun";
 
 pub fn is_valid_windows_user(name: &str) -> bool {
     match name.strip_prefix(PREFIX) {
-        Some(rest) => (1..=MAX_SLUG).contains(&rest.len())
-            && rest.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'),
+        Some(rest) => {
+            (1..=MAX_SLUG).contains(&rest.len())
+                && rest
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        }
         None => false,
     }
 }
@@ -35,8 +39,14 @@ fn slugify(label: &str) -> String {
     let mut out = String::new();
     for c in label.nfkd() {
         let mapped: &str = match c {
-            'a'..='z' | '0'..='9' => { out.push(c); continue; }
-            'A'..='Z' => { out.push(c.to_ascii_lowercase()); continue; }
+            'a'..='z' | '0'..='9' => {
+                out.push(c);
+                continue;
+            }
+            'A'..='Z' => {
+                out.push(c.to_ascii_lowercase());
+                continue;
+            }
             'ø' | 'Ø' => "o",
             'đ' | 'Đ' => "d",
             'ł' | 'Ł' => "l",
@@ -48,14 +58,21 @@ fn slugify(label: &str) -> String {
         };
         out.push_str(mapped);
     }
-    let collapsed = out.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
-    if collapsed.is_empty() { FALLBACK.to_string() } else { collapsed }
+    let collapsed = out
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if collapsed.is_empty() {
+        FALLBACK.to_string()
+    } else {
+        collapsed
+    }
 }
 
 fn cut(slug: &str, max: usize) -> &str {
     slug[..slug.len().min(max)].trim_end_matches('-')
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -71,7 +88,10 @@ mod tests {
     }
     #[test]
     fn slug_spaces_become_dashes() {
-        assert_eq!(windows_user_for("Tim  Desain", &|_| false), "claude-tim-desain");
+        assert_eq!(
+            windows_user_for("Tim  Desain", &|_| false),
+            "claude-tim-desain"
+        );
     }
     #[test]
     fn slug_empty_fallback() {
@@ -105,7 +125,14 @@ mod tests {
     }
     #[test]
     fn validation_rejects_others() {
-        for bad in ["Administrator", "claude-", "claude-UPPER", "claude-a b", "claude-12345678901234", "xclaude-a"] {
+        for bad in [
+            "Administrator",
+            "claude-",
+            "claude-UPPER",
+            "claude-a b",
+            "claude-12345678901234",
+            "xclaude-a",
+        ] {
             assert!(!is_valid_windows_user(bad), "{bad}");
         }
     }

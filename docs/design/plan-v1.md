@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust stable, Tauri 2, `windows` crate 0.58+, serde, rand, zeroize, sysinfo; UI tanpa framework; Playwright + @axe-core/playwright untuk tes UI.
 
-**Spec:** `docs/superpowers/specs/2026-11-12-claude-switcher-design.md`
+**Spec:** `docs/design/design.md`
 
 ## Global Constraints
 
@@ -217,7 +217,7 @@ tests/manual/README.md
 
 - [ ] **Step 1: Tes gagal**
 ```rust
-#[test] fn picks_roots_and_sums_tree() { /* 2 akar (Irsal, claude-kantor) + renderer --type= + claude-code CLI di Claude-Data (bukan install_dir) -> 2 instance, bytes = akar+anak */ }
+#[test] fn picks_roots_and_sums_tree() { /* 2 akar (main user, claude-kantor) + renderer --type= + claude-code CLI di Claude-Data (bukan install_dir) -> 2 instance, bytes = akar+anak */ }
 #[test] fn ignores_cli_claude_exe() { /* claude.exe di Claude-Data\claude-code -> diabaikan */ }
 ```
 - [ ] **Step 2:** `cargo test monitor` → FAIL.
@@ -310,7 +310,7 @@ test('200% text zoom does not clip labels', ...);
 
 **Files:** Create `tests/manual/README.md`; Modify `src-tauri/tauri.conf.json` (bundle NSIS, per-user install).
 
-- [ ] **Step 1:** Tulis checklist: (1) tambah akun "Tes Integrasi" → 1 UAC, Claude terbuka, login; (2) `whoami` di Claude Code akun itu ≠ Irsal & skill pribadi terlihat; (3) buka Utama + 2 akun bersamaan, panel menampilkan RAM tiap akun; (4) ubah password user via `net user` → status Bermasalah → Perbaiki → buka lagi OK; (5) hapus akun → `net user` tidak ada, `C:\Users\claude-tes-integrasi` hilang, `~/.claude` utama utuh, `cmdkey /list` tanpa target `ClaudeSwitcher/...`, `icacls ~/.claude` tanpa ACE user itu; (6) Narrator: semua kontrol terbaca dengan nama & status.
+- [ ] **Step 1:** Tulis checklist: (1) tambah akun "Tes Integrasi" → 1 UAC, Claude terbuka, login; (2) `whoami` di Claude Code akun itu ≠ alice & skill pribadi terlihat; (3) buka Utama + 2 akun bersamaan, panel menampilkan RAM tiap akun; (4) ubah password user via `net user` → status Bermasalah → Perbaiki → buka lagi OK; (5) hapus akun → `net user` tidak ada, `C:\Users\claude-tes-integrasi` hilang, `~/.claude` utama utuh, `cmdkey /list` tanpa target `ClaudeSwitcher/...`, `icacls ~/.claude` tanpa ACE user itu; (6) Narrator: semua kontrol terbaca dengan nama & status.
 - [ ] **Step 2:** `cargo tauri build` → installer di `src-tauri/target/release/bundle/nsis/`.
 - [ ] **Step 3:** Jalankan checklist; catat hasil di README.
 - [ ] **Step 4:** Commit `docs: manual integration checklist; build config`.

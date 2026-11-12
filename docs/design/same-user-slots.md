@@ -1,6 +1,6 @@
 # Opsi "user Windows yang sama" saat menambah akun
 
-Tanggal: 2026-11-12. Melengkapi `2026-11-12-claude-switcher-design.md`; bagian yang tidak disebut di sini tetap berlaku.
+Tanggal: 2026-11-12. Melengkapi `design.md`; bagian yang tidak disebut di sini tetap berlaku.
 
 ## 1. Tujuan
 

@@ -10,13 +10,13 @@
     { account: { id: "a-kantor", label: "Kantor", kind: "windows_user", windows_user: "claude-kantor", created_at: "2026-11-12T09:10:00Z" }, state: "Running", bytes: Math.round(1.18 * GB) },
     { account: { id: "a-klien", label: "Klien", kind: "windows_user", windows_user: "claude-klien", created_at: "2026-11-12T09:40:00Z" }, state: "Stopped", bytes: null },
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
-    { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/Irsal/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
+    { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
   ];
   const settings = {
     autostart: true,
     total_ram: Math.round(23.69 * GB),
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
-    recovered_backup: params.has("corrupt") ? "C:/Users/Irsal/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
+    recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
   const emit = (ev, payload) => (listeners[ev] || []).forEach((cb) => cb({ payload }));

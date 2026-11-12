@@ -33,7 +33,10 @@ pub fn prepare(data_root: &Path, family: &str, real_windowsapps: &Path) -> AppRe
     if let Ok(md) = std::fs::symlink_metadata(&link) {
         use std::os::windows::fs::MetadataExt;
         let is_link = md.file_attributes() & 0x400 != 0;
-        let empty_dir = md.is_dir() && std::fs::read_dir(&link).map(|mut r| r.next().is_none()).unwrap_or(false);
+        let empty_dir = md.is_dir()
+            && std::fs::read_dir(&link)
+                .map(|mut r| r.next().is_none())
+                .unwrap_or(false);
         if is_link || empty_dir {
             std::fs::remove_dir(&link).map_err(prepare_failed)?; // a link or an empty folder: removing it touches nothing else
         } else {
@@ -41,9 +44,13 @@ pub fn prepare(data_root: &Path, family: &str, real_windowsapps: &Path) -> AppRe
         }
     }
     std::fs::create_dir_all(link.parent().expect("link has a parent")).map_err(prepare_failed)?;
-    crate::share::create_junction(&link, real_windowsapps).map_err(|e| prepare_failed(e.detail.unwrap_or_default()))?;
+    crate::share::create_junction(&link, real_windowsapps)
+        .map_err(|e| prepare_failed(e.detail.unwrap_or_default()))?;
     if !crate::share::is_junction_to(&link, real_windowsapps) {
-        return Err(prepare_failed(format!("{} did not become a junction", link.display())));
+        return Err(prepare_failed(format!(
+            "{} did not become a junction",
+            link.display()
+        )));
     }
     Ok(())
 }
@@ -54,16 +61,21 @@ pub fn has_data(data_root: &Path, family: &str) -> bool {
 }
 
 pub fn is_ready(data_root: &Path, family: &str, real_windowsapps: &Path) -> bool {
-    data_dir(data_root, family).is_dir() && crate::share::is_junction_to(&apps_link(data_root), real_windowsapps)
+    data_dir(data_root, family).is_dir()
+        && crate::share::is_junction_to(&apps_link(data_root), real_windowsapps)
 }
 
 /// Deletes `<slots>\<id>`. Junctions inside (WindowsApps) are unlinked, never followed, and a path
 /// that is not directly inside a `slots` folder is refused, so a wrong argument deletes nothing.
 pub fn remove(slots_dir: &Path, slot_dir: &Path) -> AppResult<()> {
-    let in_slots = slot_dir.parent().map(|p| crate::monitor::same_dir(p, slots_dir)).unwrap_or(false)
+    let in_slots = slot_dir
+        .parent()
+        .map(|p| crate::monitor::same_dir(p, slots_dir))
+        .unwrap_or(false)
         && !crate::monitor::same_dir(slot_dir, slots_dir);
     if !in_slots {
-        return Err(AppError::new(ErrorCode::Invalid, "err.generic").with_detail(format!("not a slot folder: {}", slot_dir.display())));
+        return Err(AppError::new(ErrorCode::Invalid, "err.generic")
+            .with_detail(format!("not a slot folder: {}", slot_dir.display())));
     }
     crate::share::remove_profile_safely(slot_dir)
 }
@@ -71,9 +83,14 @@ pub fn remove(slots_dir: &Path, slot_dir: &Path) -> AppResult<()> {
 /// Starts Claude with LOCALAPPDATA pointed at the slot. Also brings an already running slot forward.
 pub fn launch(data_root: &Path, real_alias: &Path) -> AppResult<()> {
     if !real_alias.exists() {
-        return Err(AppError::new(ErrorCode::ClaudeMissing, "err.claude_missing"));
+        return Err(AppError::new(
+            ErrorCode::ClaudeMissing,
+            "err.claude_missing",
+        ));
     }
-    std::process::Command::new(real_alias).env("LOCALAPPDATA", data_root).spawn()?;
+    std::process::Command::new(real_alias)
+        .env("LOCALAPPDATA", data_root)
+        .spawn()?;
     Ok(())
 }
 
@@ -95,9 +112,15 @@ pub fn move_label(data_root: &Path) -> Option<String> {
 }
 
 /// Copies this Claude account's Code session list from the real data folders into the slot.
-pub fn import_sessions(real_local_appdata: &Path, data_root: &Path, family: &str) -> AppResult<usize> {
+pub fn import_sessions(
+    real_local_appdata: &Path,
+    data_root: &Path,
+    family: &str,
+) -> AppResult<usize> {
     let dest = data_dir(data_root, family).join("claude-code-sessions");
-    let signed_in = std::fs::read_dir(&dest).map(|r| r.flatten().any(|e| e.path().is_dir())).unwrap_or(false);
+    let signed_in = std::fs::read_dir(&dest)
+        .map(|r| r.flatten().any(|e| e.path().is_dir()))
+        .unwrap_or(false);
     if !signed_in {
         return Err(AppError::new(ErrorCode::NotFound, "err.import_no_signin"));
     }
@@ -130,8 +153,14 @@ mod tests {
 
     #[test]
     fn paths_follow_the_layout() {
-        assert_eq!(root_for(Path::new(r"C:\s"), "id-1"), PathBuf::from(r"C:\s\id-1\Local"));
-        assert_eq!(data_dir(Path::new(r"C:\s\id-1\Local"), "Claude_PZS"), PathBuf::from(r"C:\s\id-1\Local\Claude-Data\claude_pzs"));
+        assert_eq!(
+            root_for(Path::new(r"C:\s"), "id-1"),
+            PathBuf::from(r"C:\s\id-1\Local")
+        );
+        assert_eq!(
+            data_dir(Path::new(r"C:\s\id-1\Local"), "Claude_PZS"),
+            PathBuf::from(r"C:\s\id-1\Local\Claude-Data\claude_pzs")
+        );
     }
 
     #[test]
@@ -141,7 +170,10 @@ mod tests {
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
         assert!(root.join(r"Claude-Data\claude_pzs").is_dir());
-        assert!(crate::share::is_junction_to(&root.join(r"Microsoft\WindowsApps"), &real_apps));
+        assert!(crate::share::is_junction_to(
+            &root.join(r"Microsoft\WindowsApps"),
+            &real_apps
+        ));
         assert!(is_ready(&root, "Claude_PZS", &real_apps));
     }
 
@@ -150,12 +182,18 @@ mod tests {
         let (root, real_apps) = (tmp().join("Local"), tmp_with_file("claude-desktop.exe"));
         std::fs::create_dir_all(root.join(r"Microsoft\WindowsApps")).unwrap();
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
-        assert!(crate::share::is_junction_to(&root.join(r"Microsoft\WindowsApps"), &real_apps));
+        assert!(crate::share::is_junction_to(
+            &root.join(r"Microsoft\WindowsApps"),
+            &real_apps
+        ));
     }
 
     #[test]
     fn remove_keeps_junction_target() {
-        let (root, real_apps) = (tmp().join("slots").join("id-1").join("Local"), tmp_with_file("claude-desktop.exe"));
+        let (root, real_apps) = (
+            tmp().join("slots").join("id-1").join("Local"),
+            tmp_with_file("claude-desktop.exe"),
+        );
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
         write(root.join(r"Claude-Data\claude_pzs\Local State"), "{}");
         let slot_dir = root.parent().unwrap();
@@ -181,9 +219,15 @@ mod tests {
 
     #[test]
     fn prepare_works_when_the_path_has_cmd_special_characters() {
-        let (root, real_apps) = (tmp().join("a&b^c%d%").join("Local"), tmp_with_file("claude-desktop.exe"));
+        let (root, real_apps) = (
+            tmp().join("a&b^c%d%").join("Local"),
+            tmp_with_file("claude-desktop.exe"),
+        );
         prepare(&root, "Claude_PZS", &real_apps).unwrap();
-        assert!(crate::share::is_junction_to(&root.join(r"Microsoft\WindowsApps"), &real_apps));
+        assert!(crate::share::is_junction_to(
+            &root.join(r"Microsoft\WindowsApps"),
+            &real_apps
+        ));
     }
 
     #[test]
@@ -203,7 +247,10 @@ mod tests {
         log.push_str(&"x".repeat(300_000));
         log.push_str("\n[user-data-move] already_moved_package_emptied {}\n");
         write(root.join(r"Claude\logs\main.log"), &log);
-        assert_eq!(move_label(&root).as_deref(), Some("already_moved_package_emptied"));
+        assert_eq!(
+            move_label(&root).as_deref(),
+            Some("already_moved_package_emptied")
+        );
     }
 
     #[test]
@@ -213,7 +260,10 @@ mod tests {
             root.join(r"Claude\logs\main.log"),
             "2026 [info] [user-data-move] stay_never_left { blocked: null }\n2026 [info] [user-data-move] already_moved_package_emptied { blocked: null }\n",
         );
-        assert_eq!(move_label(&root).as_deref(), Some("already_moved_package_emptied"));
+        assert_eq!(
+            move_label(&root).as_deref(),
+            Some("already_moved_package_emptied")
+        );
         assert_eq!(move_label(&tmp()), None);
     }
 
@@ -221,23 +271,44 @@ mod tests {
     fn import_copies_sessions_without_overwriting() {
         let real = tmp();
         let root = tmp().join("Local");
-        write(real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"), "real-a");
-        write(real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\b.json"), "real-b");
-        write(root.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"), "slot-a");
+        write(
+            real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"),
+            "real-a",
+        );
+        write(
+            real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\b.json"),
+            "real-b",
+        );
+        write(
+            root.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"),
+            "slot-a",
+        );
         assert_eq!(import_sessions(&real, &root, "Claude_PZS").unwrap(), 1);
         let slot = root.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org");
-        assert_eq!(std::fs::read_to_string(slot.join("a.json")).unwrap(), "slot-a");
-        assert_eq!(std::fs::read_to_string(slot.join("b.json")).unwrap(), "real-b");
+        assert_eq!(
+            std::fs::read_to_string(slot.join("a.json")).unwrap(),
+            "slot-a"
+        );
+        assert_eq!(
+            std::fs::read_to_string(slot.join("b.json")).unwrap(),
+            "real-b"
+        );
     }
 
     #[test]
     fn import_before_sign_in_is_not_found() {
         let real = tmp();
-        write(real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"), "x");
+        write(
+            real.join(r"Claude-Data\claude_pzs\claude-code-sessions\acct\org\a.json"),
+            "x",
+        );
         let root = tmp().join("Local");
         std::fs::create_dir_all(root.join(r"Claude-Data\claude_pzs")).unwrap();
         let e = import_sessions(&real, &root, "Claude_PZS").unwrap_err();
-        assert_eq!((e.code, e.message_id), (crate::error::ErrorCode::NotFound, "err.import_no_signin"));
+        assert_eq!(
+            (e.code, e.message_id),
+            (crate::error::ErrorCode::NotFound, "err.import_no_signin")
+        );
     }
 
     #[test]

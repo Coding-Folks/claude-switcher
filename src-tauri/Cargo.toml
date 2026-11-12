@@ -2,7 +2,15 @@
 name = "claude-switcher"
 version = "0.1.0"
 edition = "2021"
-description = "Tray app to run multiple Claude Desktop accounts side by side"
+description = "Unofficial Windows tray app that runs several Claude Desktop accounts side by side"
+authors = ["Coding Folks <https://codingfolks.dev>"]
+license = "MIT"
+repository = "https://github.com/Coding-Folks/claude-switcher"
+homepage = "https://github.com/Coding-Folks/claude-switcher"
+readme = "../README.md"
+keywords = ["claude", "tray", "windows", "multi-account", "tauri"]
+categories = ["gui"]
+rust-version = "1.80"
 
 [lib]
 name = "claude_switcher_lib"

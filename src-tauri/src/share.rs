@@ -13,10 +13,17 @@ const FILE_ATTRIBUTE_READONLY: u32 = 0x1;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 
 fn icacls(args: &[&std::ffi::OsStr]) -> AppResult<String> {
-    let system = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-    let out = Command::new(system.join("System32").join("icacls.exe")).args(args).output()?;
+    let system = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    let out = Command::new(system.join("System32").join("icacls.exe"))
+        .args(args)
+        .output()?;
     if !out.status.success() {
-        return Err(AppError::io(format!("icacls failed: {}", String::from_utf8_lossy(&out.stderr).trim())));
+        return Err(AppError::io(format!(
+            "icacls failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -24,11 +31,23 @@ fn icacls(args: &[&std::ffi::OsStr]) -> AppResult<String> {
 /// Modify rights on `dir` (and everything inheriting from it) for `trustee`. Re-granting is a no-op.
 pub fn grant_shared_access(dir: &Path, trustee: &str) -> AppResult<()> {
     let ace = format!("{trustee}:(OI)(CI)M");
-    icacls(&[dir.as_os_str(), "/grant".as_ref(), ace.as_ref(), "/Q".as_ref()]).map(|_| ())
+    icacls(&[
+        dir.as_os_str(),
+        "/grant".as_ref(),
+        ace.as_ref(),
+        "/Q".as_ref(),
+    ])
+    .map(|_| ())
 }
 
 pub fn revoke_shared_access(dir: &Path, trustee: &str) -> AppResult<()> {
-    icacls(&[dir.as_os_str(), "/remove:g".as_ref(), trustee.as_ref(), "/Q".as_ref()]).map(|_| ())
+    icacls(&[
+        dir.as_os_str(),
+        "/remove:g".as_ref(),
+        trustee.as_ref(),
+        "/Q".as_ref(),
+    ])
+    .map(|_| ())
 }
 
 pub fn acl_text(dir: &Path) -> AppResult<String> {
@@ -41,7 +60,10 @@ fn is_reparse(md: &std::fs::Metadata) -> bool {
 
 fn plain(p: &Path) -> String {
     let s = p.to_string_lossy();
-    s.strip_prefix(r"\\?\").unwrap_or(&s).trim_end_matches('\\').to_lowercase()
+    s.strip_prefix(r"\\?\")
+        .unwrap_or(&s)
+        .trim_end_matches('\\')
+        .to_lowercase()
 }
 
 /// Creates directory junction `link` → `target` with FSCTL_SET_REPARSE_POINT: no shell involved,
@@ -50,14 +72,18 @@ pub fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
     use windows::core::HSTRING;
     use windows::Win32::Foundation::{CloseHandle, GENERIC_WRITE};
     use windows::Win32::Storage::FileSystem::{
-        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_MODE, OPEN_EXISTING,
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_MODE,
+        OPEN_EXISTING,
     };
     use windows::Win32::System::IO::DeviceIoControl;
     const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
     const FSCTL_SET_REPARSE_POINT: u32 = 0x0009_00A4;
 
     let target = std::fs::canonicalize(target)?; // absolute, with a \\?\ prefix
-    let plain = target.to_string_lossy().trim_start_matches(r"\\?\").to_string();
+    let plain = target
+        .to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .to_string();
     let substitute: Vec<u16> = format!(r"\??\{plain}").encode_utf16().collect();
     let print: Vec<u16> = plain.encode_utf16().collect();
     std::fs::create_dir(link)?; // fails if something is already there
@@ -72,7 +98,12 @@ pub fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
     buf.extend_from_slice(&((substitute.len() * 2) as u16).to_le_bytes());
     buf.extend_from_slice(&(((substitute.len() + 1) * 2) as u16).to_le_bytes()); // PrintNameOffset
     buf.extend_from_slice(&((print.len() * 2) as u16).to_le_bytes());
-    for u in substitute.iter().chain([0u16].iter()).chain(print.iter()).chain([0u16].iter()) {
+    for u in substitute
+        .iter()
+        .chain([0u16].iter())
+        .chain(print.iter())
+        .chain([0u16].iter())
+    {
         buf.extend_from_slice(&u.to_le_bytes());
     }
 
@@ -92,7 +123,16 @@ pub fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
         )
         .map_err(|_| fail("CreateFileW", link))?;
         let mut returned = 0u32;
-        let ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, Some(buf.as_ptr() as *const _), buf.len() as u32, None, 0, Some(&mut returned), None);
+        let ok = DeviceIoControl(
+            h,
+            FSCTL_SET_REPARSE_POINT,
+            Some(buf.as_ptr() as *const _),
+            buf.len() as u32,
+            None,
+            0,
+            Some(&mut returned),
+            None,
+        );
         let _ = CloseHandle(h);
         ok.map_err(|_| fail("FSCTL_SET_REPARSE_POINT", link))?;
     }
@@ -100,11 +140,15 @@ pub fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
 }
 
 pub fn is_junction_to(link: &Path, target: &Path) -> bool {
-    let Ok(md) = std::fs::symlink_metadata(link) else { return false };
+    let Ok(md) = std::fs::symlink_metadata(link) else {
+        return false;
+    };
     if !is_reparse(&md) {
         return false;
     }
-    let Ok(dest) = std::fs::read_link(link) else { return false };
+    let Ok(dest) = std::fs::read_link(link) else {
+        return false;
+    };
     let want = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
     plain(&dest) == plain(&want)
 }
@@ -123,7 +167,11 @@ pub fn remove_profile_safely(profile_dir: &Path) -> AppResult<()> {
             // Rust reports a junction as a symlink, not a dir; the attribute says which kind of link it is.
             // Removing a directory link removes only the link.
             let dir_link = md.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0;
-            return if dir_link { std::fs::remove_dir(path) } else { std::fs::remove_file(path) };
+            return if dir_link {
+                std::fs::remove_dir(path)
+            } else {
+                std::fs::remove_file(path)
+            };
         }
         if md.is_dir() {
             for entry in std::fs::read_dir(path)? {
@@ -174,7 +222,14 @@ mod tests {
         d
     }
     fn mklink_j(link: &Path, target: &Path) {
-        let ok = Command::new("cmd").args(["/C", "mklink", "/J"]).arg(link).arg(target).output().unwrap().status.success();
+        let ok = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap()
+            .status
+            .success();
         assert!(ok, "mklink /J failed");
     }
 
@@ -194,8 +249,14 @@ mod tests {
         remove_profile_safely(&profile).unwrap();
 
         assert!(!profile.exists());
-        assert_eq!(std::fs::read_to_string(target.join("keep.txt")).unwrap(), "keep");
-        assert_eq!(std::fs::read_to_string(target.join("skills").join("s.md")).unwrap(), "skill");
+        assert_eq!(
+            std::fs::read_to_string(target.join("keep.txt")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("skills").join("s.md")).unwrap(),
+            "skill"
+        );
     }
 
     #[test]
@@ -255,14 +316,24 @@ mod tests {
         std::fs::write(profile.join(".claude").join("old.txt"), "old").unwrap();
 
         let out = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &junction_ps_snippet(&target)])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &junction_ps_snippet(&target),
+            ])
             .env("USERPROFILE", &profile)
             .output()
             .unwrap();
         let text = String::from_utf8_lossy(&out.stdout);
-        assert!(text.contains("junction=ok"), "{text} {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            text.contains("junction=ok"),
+            "{text} {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         assert!(is_junction_to(&profile.join(".claude"), &target));
-        let backups: Vec<_> = std::fs::read_dir(&profile).unwrap()
+        let backups: Vec<_> = std::fs::read_dir(&profile)
+            .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .filter(|n| n.starts_with(".claude.bak-"))
             .collect();

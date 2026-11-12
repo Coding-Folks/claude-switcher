@@ -77,12 +77,18 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 /// CreateProcessWithLogonW with the user's profile loaded. Returns the pid; waits when `wait` is set.
-fn run_as(user: &str, pw: &Zeroizing<String>, app: &Path, args: &str, wait: Option<Duration>) -> AppResult<u32> {
+fn run_as(
+    user: &str,
+    pw: &Zeroizing<String>,
+    app: &Path,
+    args: &str,
+    wait: Option<Duration>,
+) -> AppResult<u32> {
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows::Win32::System::Threading::{
-        CreateProcessWithLogonW, WaitForSingleObject, CREATE_NO_WINDOW, LOGON_WITH_PROFILE, PROCESS_INFORMATION,
-        STARTUPINFOW,
+        CreateProcessWithLogonW, WaitForSingleObject, CREATE_NO_WINDOW, LOGON_WITH_PROFILE,
+        PROCESS_INFORMATION, STARTUPINFOW,
     };
     let u = wide(user);
     let d = wide(".");
@@ -90,13 +96,24 @@ fn run_as(user: &str, pw: &Zeroizing<String>, app: &Path, args: &str, wait: Opti
     let a = wide(&app.to_string_lossy());
     let mut cmd = wide(&format!("\"{}\" {}", app.to_string_lossy(), args));
     let cwd = wide(&std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
-    let si = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, ..Default::default() };
+    let si = STARTUPINFOW {
+        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
+    };
     let mut pi = PROCESS_INFORMATION::default();
     let res = unsafe {
         CreateProcessWithLogonW(
-            PCWSTR(u.as_ptr()), PCWSTR(d.as_ptr()), PCWSTR(p.as_ptr()), LOGON_WITH_PROFILE,
-            PCWSTR(a.as_ptr()), Some(PWSTR(cmd.as_mut_ptr())), CREATE_NO_WINDOW, None, PCWSTR(cwd.as_ptr()),
-            &si, &mut pi,
+            PCWSTR(u.as_ptr()),
+            PCWSTR(d.as_ptr()),
+            PCWSTR(p.as_ptr()),
+            LOGON_WITH_PROFILE,
+            PCWSTR(a.as_ptr()),
+            Some(PWSTR(cmd.as_mut_ptr())),
+            CREATE_NO_WINDOW,
+            None,
+            PCWSTR(cwd.as_ptr()),
+            &si,
+            &mut pi,
         )
     };
     if let Err(e) = res {
@@ -107,19 +124,26 @@ fn run_as(user: &str, pw: &Zeroizing<String>, app: &Path, args: &str, wait: Opti
         });
     }
     let pid = pi.dwProcessId;
-    let timed_out = wait.map(|w| unsafe { WaitForSingleObject(pi.hProcess, w.as_millis() as u32) } != WAIT_OBJECT_0);
+    let timed_out = wait.map(
+        |w| unsafe { WaitForSingleObject(pi.hProcess, w.as_millis() as u32) } != WAIT_OBJECT_0,
+    );
     unsafe {
         let _ = CloseHandle(pi.hThread);
         let _ = CloseHandle(pi.hProcess);
     }
     if timed_out == Some(true) {
-        return Err(AppError::io(format!("{} did not finish in time", app.display())));
+        return Err(AppError::io(format!(
+            "{} did not finish in time",
+            app.display()
+        )));
     }
     Ok(pid)
 }
 
 fn system32(exe: &str) -> PathBuf {
-    PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into())).join("System32").join(exe)
+    PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+        .join("System32")
+        .join(exe)
 }
 
 fn powershell() -> PathBuf {
@@ -127,13 +151,26 @@ fn powershell() -> PathBuf {
 }
 
 pub fn bootstrap_args(script: &Path) -> String {
-    format!("-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"", script.display())
+    format!(
+        "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",
+        script.display()
+    )
 }
 
 /// First run for a hidden user: creates its profile, registers Claude, links `.claude`.
-pub fn bootstrap(user: &str, pw: &Zeroizing<String>, pkg: &ClaudePkg, main_claude_dir: &Path) -> AppResult<BootstrapReport> {
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("ClaudeSwitcher").join("bootstrap").join(uuid::Uuid::new_v4().to_string());
+pub fn bootstrap(
+    user: &str,
+    pw: &Zeroizing<String>,
+    pkg: &ClaudePkg,
+    main_claude_dir: &Path,
+) -> AppResult<BootstrapReport> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base
+        .join("ClaudeSwitcher")
+        .join("bootstrap")
+        .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(&dir)?;
     crate::share::grant_shared_access(&dir, user)?;
     let log = dir.join("boot.log");
@@ -143,8 +180,16 @@ pub fn bootstrap(user: &str, pw: &Zeroizing<String>, pkg: &ClaudePkg, main_claud
     let mut body = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM so Windows PowerShell 5 reads non-ASCII paths right
     body.extend_from_slice(bootstrap_script(&pkg.family, main_claude_dir, &log).as_bytes());
     std::fs::write(&script, body)?;
-    let run = run_as(user, pw, &powershell(), &bootstrap_args(&script), Some(BOOTSTRAP_TIMEOUT));
-    let report = std::fs::read_to_string(&log).map(|s| parse_bootstrap_log(&s)).unwrap_or_default();
+    let run = run_as(
+        user,
+        pw,
+        &powershell(),
+        &bootstrap_args(&script),
+        Some(BOOTSTRAP_TIMEOUT),
+    );
+    let report = std::fs::read_to_string(&log)
+        .map(|s| parse_bootstrap_log(&s))
+        .unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dir);
     run?;
     Ok(report)
@@ -152,10 +197,15 @@ pub fn bootstrap(user: &str, pw: &Zeroizing<String>, pkg: &ClaudePkg, main_claud
 
 /// Main account: the current user's own alias. Also brings an existing window forward.
 pub fn launch_main() -> AppResult<()> {
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
     let alias = base.join(r"Microsoft\WindowsApps\claude-desktop.exe");
     if !alias.exists() {
-        return Err(AppError::new(ErrorCode::ClaudeMissing, "err.claude_missing"));
+        return Err(AppError::new(
+            ErrorCode::ClaudeMissing,
+            "err.claude_missing",
+        ));
     }
     std::process::Command::new(alias).spawn()?;
     Ok(())
@@ -163,7 +213,8 @@ pub fn launch_main() -> AppResult<()> {
 
 /// Hidden account: Claude as that user. Also brings an existing window forward.
 pub fn launch_as(user: &str, pw: &Zeroizing<String>) -> AppResult<u32> {
-    let profile = crate::winuser::profile_path(user).ok_or_else(|| AppError::new(ErrorCode::JunctionBroken, "err.junction_broken"))?;
+    let profile = crate::winuser::profile_path(user)
+        .ok_or_else(|| AppError::new(ErrorCode::JunctionBroken, "err.junction_broken"))?;
     run_as(user, pw, &alias_for_profile(&profile), "", None)
 }
 
@@ -173,14 +224,26 @@ pub fn close(root_pid: u32, as_user: Option<(&str, &Zeroizing<String>)>) -> AppR
     let args = format!("/PID {root_pid} /T /F");
     match as_user {
         None => {
-            let out = std::process::Command::new(system32("taskkill.exe")).args(args.split(' ')).output()?;
+            let out = std::process::Command::new(system32("taskkill.exe"))
+                .args(args.split(' '))
+                .output()?;
             // 128 = no such process: it already ended, which is what we wanted.
             match out.status.code() {
                 Some(0) | Some(128) => Ok(()),
-                _ => Err(AppError::io(format!("taskkill failed: {}", String::from_utf8_lossy(&out.stderr).trim()))),
+                _ => Err(AppError::io(format!(
+                    "taskkill failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ))),
             }
         }
-        Some((user, pw)) => run_as(user, pw, &system32("taskkill.exe"), &args, Some(Duration::from_secs(15))).map(|_| ()),
+        Some((user, pw)) => run_as(
+            user,
+            pw,
+            &system32("taskkill.exe"),
+            &args,
+            Some(Duration::from_secs(15)),
+        )
+        .map(|_| ()),
     }
 }
 
@@ -195,7 +258,9 @@ mod tests {
         assert!(r.registered && r.junction_ok && r.alias_present);
         let r = parse_bootstrap_log("register=fail:0x80073CF9\n");
         assert!(!r.registered && !r.junction_ok && !r.alias_present);
-        let r = parse_bootstrap_log("\u{feff}register=ok\r\njunction=fail:Access denied\r\nalias=ok\r\n");
+        let r = parse_bootstrap_log(
+            "\u{feff}register=ok\r\njunction=fail:Access denied\r\nalias=ok\r\n",
+        );
         assert!(r.registered && !r.junction_ok && r.alias_present);
         assert!(!r.ok());
     }
@@ -203,14 +268,23 @@ mod tests {
     fn alias_path_for_profile() {
         assert_eq!(
             alias_for_profile(Path::new(r"C:\Users\claude-kantor")),
-            Path::new(r"C:\Users\claude-kantor\AppData\Local\Microsoft\WindowsApps\claude-desktop.exe")
+            Path::new(
+                r"C:\Users\claude-kantor\AppData\Local\Microsoft\WindowsApps\claude-desktop.exe"
+            )
         );
     }
     #[test]
     fn bootstrap_script_registers_links_and_logs() {
-        let s = bootstrap_script("Claude_pzs8sxrjxfjjc", Path::new(r"C:\Users\Irsal\.claude"), Path::new(r"C:\x\boot.log"));
-        assert!(s.contains("Add-AppxPackage -RegisterByFamilyName -MainPackage 'Claude_pzs8sxrjxfjjc'"), "{s}");
-        assert!(s.contains(r"'C:\Users\Irsal\.claude'"), "{s}");
+        let s = bootstrap_script(
+            "Claude_pzs8sxrjxfjjc",
+            Path::new(r"C:\Users\alice\.claude"),
+            Path::new(r"C:\x\boot.log"),
+        );
+        assert!(
+            s.contains("Add-AppxPackage -RegisterByFamilyName -MainPackage 'Claude_pzs8sxrjxfjjc'"),
+            "{s}"
+        );
+        assert!(s.contains(r"'C:\Users\alice\.claude'"), "{s}");
         assert!(s.contains(r"'C:\x\boot.log'"), "{s}");
         assert!(s.contains("alias="), "{s}");
     }
@@ -234,16 +308,28 @@ mod tests {
     fn run_as_unknown_user_is_a_logon_failure_not_a_bad_parameter() {
         // Windows validates the call before the logon: a parameter it rejects shows up as Win32 87
         // even for a real user, which is what broke "Tambah akun". An unknown user must reach the logon.
-        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join(r"System32\cmd.exe");
-        let err = run_as("claude-nope-zz9", &Zeroizing::new("x".into()), &cmd, "/c exit 0", Some(Duration::from_secs(5))).unwrap_err();
+        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap())
+            .join(r"System32\cmd.exe");
+        let err = run_as(
+            "claude-nope-zz9",
+            &Zeroizing::new("x".into()),
+            &cmd,
+            "/c exit 0",
+            Some(Duration::from_secs(5)),
+        )
+        .unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::LogonFailed, "{err:?}");
     }
 
     #[test]
     fn bootstrap_command_line_fits_create_process_with_logon() {
         // CreateProcessWithLogonW rejects command lines over 1024 characters with ERROR_INVALID_PARAMETER.
-        let log = Path::new(r"C:\Users\Irsal\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.log");
-        let args = bootstrap_args(Path::new(r"C:\Users\Irsal\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.ps1"));
+        let log = Path::new(
+            r"C:\Users\alice\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.log",
+        );
+        let args = bootstrap_args(Path::new(
+            r"C:\Users\alice\AppData\Local\ClaudeSwitcher\bootstrap\0b7f0c8e-5a8e-4a43-9a1b-4a3a0f6d1c22\boot.ps1",
+        ));
         let line = format!("\"{}\" {}", powershell().display(), args);
         assert!(line.len() <= 1024, "{} chars", line.len());
         let _ = log;
@@ -251,9 +337,21 @@ mod tests {
 
     #[test]
     fn long_command_line_is_rejected_before_logon() {
-        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join(r"System32\cmd.exe");
+        let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap())
+            .join(r"System32\cmd.exe");
         let long = format!("/c rem {}", "x".repeat(2000));
-        let err = run_as("claude-nope-zz9", &Zeroizing::new("x".into()), &cmd, &long, Some(Duration::from_secs(5))).unwrap_err();
-        assert_eq!(err.code, crate::error::ErrorCode::Win32(0x8007_0057), "{err:?}");
+        let err = run_as(
+            "claude-nope-zz9",
+            &Zeroizing::new("x".into()),
+            &cmd,
+            &long,
+            Some(Duration::from_secs(5)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.code,
+            crate::error::ErrorCode::Win32(0x8007_0057),
+            "{err:?}"
+        );
     }
 }

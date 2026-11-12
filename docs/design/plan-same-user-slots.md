@@ -8,11 +8,11 @@
 
 **Tech Stack:** Rust stable, Tauri 2, `windows` crate (sudah dipakai), UI HTML/JS polos, Playwright + axe.
 
-**Spec:** `docs/superpowers/specs/2026-11-12-same-user-slots-design.md` (melengkapi `docs/superpowers/specs/2026-11-12-claude-switcher-design.md`)
+**Spec:** `docs/design/same-user-slots.md` (melengkapi `docs/design/design.md`)
 
 ## Global Constraints
 
-- Semua Global Constraints di `docs/superpowers/plans/2026-11-12-claude-switcher.md` tetap berlaku.
+- Semua Global Constraints di `docs/design/plan-v1.md` tetap berlaku.
 - Root slot: `%LOCALAPPDATA%\ClaudeSwitcher\slots\<account-id>\Local`. Folder dinamai dengan `id`, bukan label.
 - Folder data slot: `<data_root>\Claude-Data\<family huruf kecil>`, contohnya `claude_pzs8sxrjxfjjc`.
 - Junction slot: `<data_root>\Microsoft\WindowsApps` → `%LOCALAPPDATA%\Microsoft\WindowsApps` yang asli.
@@ -335,9 +335,9 @@ Jalankan juga ulang semua tes axe yang ada, dengan form tambah terbuka.
 ### Task 6: Uji manual, dokumen, dan build
 
 **Files:**
-- Modify: `tests/manual/README.md`, `docs/superpowers/specs/2026-11-12-claude-switcher-design.md` (§2)
+- Modify: `tests/manual/README.md`, `docs/design/design.md` (§2)
 
-- [ ] **Step 1:** Tambahkan bagian "Akun di user Windows yang sama" ke checklist manual, dengan tabel langkah **S1–S8** persis dari spec slot §8. Tambahkan juga baris di §2 spec utama: "Override `LOCALAPPDATA` + `Claude-Data\claude_<family>` yang dibuat lebih dulu → banyak slot (diuji 2026-11-12, Claude 5.1231.2.0); lihat `2026-11-12-same-user-slots-design.md`."
+- [ ] **Step 1:** Tambahkan bagian "Akun di user Windows yang sama" ke checklist manual, dengan tabel langkah **S1–S8** persis dari spec slot §8. Tambahkan juga baris di §2 spec utama: "Override `LOCALAPPDATA` + `Claude-Data\claude_<family>` yang dibuat lebih dulu → banyak slot (diuji 2026-11-12, Claude 5.1231.2.0); lihat `same-user-slots.md`."
 - [ ] **Step 2:** `cargo tauri build` → installer di `src-tauri/target/release/bundle/nsis/`.
 - [ ] **Step 3:** Jalankan S1–S8 bersama pengguna dan isi kolom hasil. Kalau S3 (login bersamaan) atau S7 (Cowork) gagal, catat di bagian "Hasil" dan tampilkan peringatan di petunjuk opsi 1. Jangan menghapus mode ini tanpa persetujuan pengguna.
 - [ ] **Step 4:** Commit `docs: same-user slot checklist and findings`.

@@ -9,10 +9,17 @@ pub const MAX_BYTES: u64 = 1 << 20;
 const KEEP: usize = 5;
 
 pub fn format_line(level: &str, msg: &str, fields: &[(&str, &str)]) -> String {
-    let mut line = format!("{} {level} {msg}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    let mut line = format!(
+        "{} {level} {msg}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
     for (k, v) in fields {
         let lk = k.to_ascii_lowercase();
-        let v = if lk.contains("password") || lk.contains("secret") { "[redacted]" } else { v };
+        let v = if lk.contains("password") || lk.contains("secret") {
+            "[redacted]"
+        } else {
+            v
+        };
         line.push_str(&format!(" {k}={v}"));
     }
     line
@@ -26,7 +33,11 @@ pub struct Logger {
 
 impl Logger {
     pub fn new(path: impl Into<PathBuf>, max: u64) -> Self {
-        Self { path: path.into(), max, lock: Mutex::new(()) }
+        Self {
+            path: path.into(),
+            max,
+            lock: Mutex::new(()),
+        }
     }
 
     fn rotated(&self, n: usize) -> PathBuf {
@@ -48,10 +59,17 @@ impl Logger {
         if let Some(dir) = self.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if std::fs::metadata(&self.path).map(|m| m.len() >= self.max).unwrap_or(false) {
+        if std::fs::metadata(&self.path)
+            .map(|m| m.len() >= self.max)
+            .unwrap_or(false)
+        {
             self.rotate();
         }
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+        {
             let _ = writeln!(f, "{}", format_line(level, msg, fields));
         }
     }
@@ -81,9 +99,21 @@ mod tests {
 
     #[test]
     fn redacts_secrets() {
-        let line = format_line("INFO", "add", &[("user", "claude-kantor"), ("password", "hunter2"), ("Secret_File", "C:\\s"), ("new_password", "x")]);
+        let line = format_line(
+            "INFO",
+            "add",
+            &[
+                ("user", "claude-kantor"),
+                ("password", "hunter2"),
+                ("Secret_File", "C:\\s"),
+                ("new_password", "x"),
+            ],
+        );
         assert!(line.contains("user=claude-kantor"), "{line}");
-        assert!(!line.contains("hunter2") && !line.contains("C:\\s") && !line.contains("=x"), "{line}");
+        assert!(
+            !line.contains("hunter2") && !line.contains("C:\\s") && !line.contains("=x"),
+            "{line}"
+        );
         assert!(line.contains("password=[redacted]"), "{line}");
     }
 
@@ -95,10 +125,24 @@ mod tests {
         for i in 0..40 {
             log.write("INFO", &format!("event number {i:03}"), &[]);
         }
-        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
         names.sort();
-        assert_eq!(names, vec!["app.log", "app.log.1", "app.log.2", "app.log.3", "app.log.4"]);
+        assert_eq!(
+            names,
+            vec![
+                "app.log",
+                "app.log.1",
+                "app.log.2",
+                "app.log.3",
+                "app.log.4"
+            ]
+        );
         assert!(std::fs::metadata(dir.join("app.log")).unwrap().len() <= 100 + 80);
-        assert!(std::fs::read_to_string(dir.join("app.log")).unwrap().contains("event number 039"));
+        assert!(std::fs::read_to_string(dir.join("app.log"))
+            .unwrap()
+            .contains("event number 039"));
     }
 }

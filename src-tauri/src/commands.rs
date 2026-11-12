@@ -46,10 +46,19 @@ async fn blocking<T: Send + 'static>(
     job: impl FnOnce() -> AppResult<T> + Send + 'static,
 ) -> AppResult<T> {
     busy.fetch_add(1, Ordering::SeqCst);
-    let out = tauri::async_runtime::spawn_blocking(job).await.map_err(AppError::io).and_then(|r| r);
+    let out = tauri::async_runtime::spawn_blocking(job)
+        .await
+        .map_err(AppError::io)
+        .and_then(|r| r);
     busy.fetch_sub(1, Ordering::SeqCst);
     if let Err(e) = &out {
-        crate::applog::error("command failed", &[("code", &format!("{:?}", e.code)), ("detail", e.detail.as_deref().unwrap_or(""))]);
+        crate::applog::error(
+            "command failed",
+            &[
+                ("code", &format!("{:?}", e.code)),
+                ("detail", e.detail.as_deref().unwrap_or("")),
+            ],
+        );
     }
     refresh(app);
     out
@@ -64,57 +73,96 @@ pub fn refresh(app: &AppHandle) {
 #[tauri::command]
 pub async fn list_accounts(state: State<'_, AppState>) -> AppResult<Vec<AccountView>> {
     let f = state.flows()?;
-    tauri::async_runtime::spawn_blocking(move || f.list()).await.map_err(AppError::io)?
+    tauri::async_runtime::spawn_blocking(move || f.list())
+        .await
+        .map_err(AppError::io)?
 }
 
 #[tauri::command]
-pub async fn add_account(app: AppHandle, state: State<'_, AppState>, label: String, mode: AddMode) -> AppResult<Account> {
+pub async fn add_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    label: String,
+    mode: AddMode,
+) -> AppResult<Account> {
     let f = state.flows()?;
     let emitter = app.clone();
     let shown = label.clone();
     crate::applog::info("add account", &[("label", &label)]);
     blocking(&app, &state.busy, move || {
         f.add(&label, mode, &|step| {
-            let _ = emitter.emit("progress", Progress { step: step.into(), account_label: shown.clone() });
+            let _ = emitter.emit(
+                "progress",
+                Progress {
+                    step: step.into(),
+                    account_label: shown.clone(),
+                },
+            );
         })
     })
     .await
 }
 
 #[tauri::command]
-pub async fn open_account(app: AppHandle, state: State<'_, AppState>, id: String, confirmed_low_ram: bool) -> AppResult<OpenOutcome> {
+pub async fn open_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    confirmed_low_ram: bool,
+) -> AppResult<OpenOutcome> {
     let f = state.flows()?;
     blocking(&app, &state.busy, move || f.open(&id, confirmed_low_ram)).await
 }
 
 #[tauri::command]
-pub async fn close_account(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+pub async fn close_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
     let f = state.flows()?;
     blocking(&app, &state.busy, move || f.close(&id)).await
 }
 
 #[tauri::command]
-pub async fn rename_account(app: AppHandle, state: State<'_, AppState>, id: String, label: String) -> AppResult<()> {
+pub async fn rename_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    label: String,
+) -> AppResult<()> {
     let f = state.flows()?;
     blocking(&app, &state.busy, move || f.rename(&id, &label)).await
 }
 
 #[tauri::command]
-pub async fn remove_account(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+pub async fn remove_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
     let f = state.flows()?;
     crate::applog::info("remove account", &[("id", &id)]);
     blocking(&app, &state.busy, move || f.remove(&id)).await
 }
 
 #[tauri::command]
-pub async fn import_history(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+pub async fn import_history(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
     let f = state.flows()?;
     crate::applog::info("import history", &[("id", &id)]);
     blocking(&app, &state.busy, move || f.import_history(&id)).await
 }
 
 #[tauri::command]
-pub async fn repair_account(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<RepairReport> {
+pub async fn repair_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<RepairReport> {
     let f = state.flows()?;
     blocking(&app, &state.busy, move || f.repair(&id)).await
 }
@@ -129,8 +177,18 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
     })
     .await
     .map_err(AppError::io)?;
-    let recovered_backup = f.recovered_backup.lock().unwrap().take().map(|p| p.display().to_string());
-    Ok(Settings { autostart, free_ram: snap.free_ram, total_ram: snap.total_ram, recovered_backup })
+    let recovered_backup = f
+        .recovered_backup
+        .lock()
+        .unwrap()
+        .take()
+        .map(|p| p.display().to_string());
+    Ok(Settings {
+        autostart,
+        free_ram: snap.free_ram,
+        total_ram: snap.total_ram,
+        recovered_backup,
+    })
 }
 
 #[tauri::command]

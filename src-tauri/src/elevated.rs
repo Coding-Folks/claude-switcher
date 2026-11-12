@@ -10,17 +10,28 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ElevatedOp {
-    CreateUser { name: String },
-    SetPassword { name: String },
-    DeleteUser { name: String },
+    CreateUser {
+        name: String,
+    },
+    SetPassword {
+        name: String,
+    },
+    DeleteUser {
+        name: String,
+    },
     /// Copies the main user's Code session list into the hidden user's Claude data (history.rs).
-    ImportSessions { name: String },
+    ImportSessions {
+        name: String,
+    },
 }
 
 impl ElevatedOp {
     fn name(&self) -> &str {
         match self {
-            Self::CreateUser { name } | Self::SetPassword { name } | Self::DeleteUser { name } | Self::ImportSessions { name } => name,
+            Self::CreateUser { name }
+            | Self::SetPassword { name }
+            | Self::DeleteUser { name }
+            | Self::ImportSessions { name } => name,
         }
     }
 }
@@ -41,7 +52,11 @@ fn from_result(r: ElevatedResult) -> AppResult<()> {
     if r.ok {
         return Ok(());
     }
-    if let Some((id, code)) = r.message_id.as_deref().and_then(|m| PASSED_MESSAGES.iter().find(|(id, _)| *id == m)) {
+    if let Some((id, code)) = r
+        .message_id
+        .as_deref()
+        .and_then(|m| PASSED_MESSAGES.iter().find(|(id, _)| *id == m))
+    {
         return Err(AppError::new(*code, id));
     }
     Err(match r.win32 {
@@ -56,19 +71,29 @@ fn import_sessions(name: &str) -> AppResult<()> {
     let profile = crate::winuser::profile_path(name).ok_or_else(no_signin)?;
     let dests: Vec<PathBuf> = crate::history::sessions_dirs(&profile.join(r"AppData\Local"))
         .into_iter()
-        .filter(|d| std::fs::read_dir(d).map(|mut r| r.next().is_some()).unwrap_or(false))
+        .filter(|d| {
+            std::fs::read_dir(d)
+                .map(|mut r| r.next().is_some())
+                .unwrap_or(false)
+        })
         .collect();
     if dests.is_empty() {
         return Err(no_signin());
     }
-    let main_local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
+    let main_local = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
     let sources = crate::history::sessions_dirs(&main_local);
     for dest in &dests {
         crate::history::copy_plan(&crate::history::import_plan(&sources, dest))?;
         // Copied by the admin token: hand the files to the hidden user.
-        let system = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        let system = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
         let _ = std::process::Command::new(system.join(r"System32\icacls.exe"))
-            .arg(dest).args(["/setowner", name, "/T", "/C", "/Q"]).output();
+            .arg(dest)
+            .args(["/setowner", name, "/T", "/C", "/Q"])
+            .output();
     }
     Ok(())
 }
@@ -78,7 +103,12 @@ fn invalid(why: &str) -> AppError {
 }
 
 pub fn parse_args(args: &[String]) -> AppResult<(ElevatedOp, Option<PathBuf>, PathBuf)> {
-    let after = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    let after = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
     let json = after("--elevated").ok_or_else(|| invalid("missing --elevated"))?;
     let op: ElevatedOp = serde_json::from_str(&json).map_err(|e| invalid(&e.to_string()))?;
     if !is_valid_windows_user(op.name()) {
@@ -86,7 +116,9 @@ pub fn parse_args(args: &[String]) -> AppResult<(ElevatedOp, Option<PathBuf>, Pa
     }
     let result = after("--result").ok_or_else(|| invalid("missing --result"))?;
     let result = exchange_path(&result, ".result.json")?;
-    let secret = after("--secret").map(|s| exchange_path(&s, ".secret")).transpose()?;
+    let secret = after("--secret")
+        .map(|s| exchange_path(&s, ".secret"))
+        .transpose()?;
     Ok((op, secret, result))
 }
 
@@ -97,16 +129,25 @@ fn exchange_path(raw: &str, suffix: &str) -> AppResult<PathBuf> {
     use std::os::windows::fs::MetadataExt;
     use std::path::Component;
     let p = PathBuf::from(raw);
-    if !p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+    if !p.is_absolute()
+        || p.components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+    {
         return Err(invalid("exchange path must be absolute and plain"));
     }
-    let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| invalid("bad exchange file name"))?;
-    let stem = name.strip_suffix(suffix).ok_or_else(|| invalid("bad exchange file kind"))?;
+    let name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| invalid("bad exchange file name"))?;
+    let stem = name
+        .strip_suffix(suffix)
+        .ok_or_else(|| invalid("bad exchange file kind"))?;
     if uuid::Uuid::parse_str(stem).is_err() {
         return Err(invalid("bad exchange file name"));
     }
     let dir = temp_dir()?;
-    let same_dir = p.parent().map(|d| d.to_string_lossy().to_lowercase()) == Some(dir.to_string_lossy().to_lowercase());
+    let same_dir = p.parent().map(|d| d.to_string_lossy().to_lowercase())
+        == Some(dir.to_string_lossy().to_lowercase());
     if !same_dir {
         return Err(invalid("exchange file outside the exchange folder"));
     }
@@ -128,7 +169,9 @@ fn read_secret(path: Option<&Path>) -> AppResult<Zeroizing<String>> {
     }
     let bytes = Zeroizing::new(std::fs::read(path)?);
     let _ = std::fs::remove_file(path);
-    std::str::from_utf8(&bytes).map(|s| Zeroizing::new(s.to_string())).map_err(|_| invalid("secret is not UTF-8"))
+    std::str::from_utf8(&bytes)
+        .map(|s| Zeroizing::new(s.to_string()))
+        .map_err(|_| invalid("secret is not UTF-8"))
 }
 
 /// Runs inside the elevated process.
@@ -143,7 +186,9 @@ pub fn run_elevated(op: &ElevatedOp, secret: Option<&Path>) -> AppResult<()> {
             }
             Ok(())
         }
-        ElevatedOp::SetPassword { name } => crate::winuser::set_password(name, &read_secret(secret)?),
+        ElevatedOp::SetPassword { name } => {
+            crate::winuser::set_password(name, &read_secret(secret)?)
+        }
         ElevatedOp::DeleteUser { name } => crate::winuser::delete_with_profile(name),
         ElevatedOp::ImportSessions { name } => import_sessions(name),
     }
@@ -152,7 +197,9 @@ pub fn run_elevated(op: &ElevatedOp, secret: Option<&Path>) -> AppResult<()> {
 /// Entry point for `--elevated`; returns the process exit code.
 pub fn main_elevated(args: &[String]) -> i32 {
     // Nothing is written unless the arguments, including the result path, passed validation.
-    let Ok((op, secret, result_path)) = parse_args(args) else { return 2 };
+    let Ok((op, secret, result_path)) = parse_args(args) else {
+        return 2;
+    };
     let outcome = {
         let r = run_elevated(&op, secret.as_deref());
         if let Some(s) = &secret {
@@ -161,20 +208,37 @@ pub fn main_elevated(args: &[String]) -> i32 {
         r
     };
     let report = match &outcome {
-        Ok(()) => ElevatedResult { ok: true, win32: None, detail: None, message_id: None },
+        Ok(()) => ElevatedResult {
+            ok: true,
+            win32: None,
+            detail: None,
+            message_id: None,
+        },
         Err(e) => ElevatedResult {
             ok: false,
-            win32: if let ErrorCode::Win32(c) = e.code { Some(c) } else { None },
+            win32: if let ErrorCode::Win32(c) = e.code {
+                Some(c)
+            } else {
+                None
+            },
             detail: e.detail.clone(),
             message_id: Some(e.message_id.to_string()),
         },
     };
     // create_new: never follow or overwrite something already at that name.
-    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).create_new(true).open(&result_path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&result_path)
+    {
         use std::io::Write;
         let _ = f.write_all(&serde_json::to_vec(&report).unwrap_or_default());
     }
-    if outcome.is_ok() { 0 } else { 1 }
+    if outcome.is_ok() {
+        0
+    } else {
+        1
+    }
 }
 
 /// Quotes one argument so CommandLineToArgvW returns it unchanged.
@@ -207,7 +271,12 @@ fn quote(arg: &str) -> String {
 /// The parameter string for the elevated process (program name excluded).
 pub fn command_line(op: &ElevatedOp, secret: Option<&Path>, result: &Path) -> String {
     let json = serde_json::to_string(op).expect("op serializes");
-    let mut parts = vec!["--elevated".to_string(), quote(&json), "--result".into(), quote(&result.to_string_lossy())];
+    let mut parts = vec![
+        "--elevated".to_string(),
+        quote(&json),
+        "--result".into(),
+        quote(&result.to_string_lossy()),
+    ];
     if let Some(s) = secret {
         parts.push("--secret".into());
         parts.push(quote(&s.to_string_lossy()));
@@ -227,14 +296,18 @@ pub fn split_args(line: &str) -> Vec<String> {
         if argv.is_null() {
             return vec![];
         }
-        let v = (1..n as usize).map(|i| (*argv.add(i)).to_string().unwrap_or_default()).collect();
+        let v = (1..n as usize)
+            .map(|i| (*argv.add(i)).to_string().unwrap_or_default())
+            .collect();
         let _ = LocalFree(Some(HLOCAL(argv as *mut _)));
         v
     }
 }
 
 fn temp_dir() -> AppResult<PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
     let dir = base.join("ClaudeSwitcher").join("tmp");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
@@ -283,14 +356,19 @@ pub fn request(op: ElevatedOp, secret: Option<&Zeroizing<String>>) -> AppResult<
         return Err(if e.code() == ERROR_CANCELLED.to_hresult() {
             AppError::new(ErrorCode::UacCancelled, "err.uac_cancelled")
         } else {
-            AppError::new(ErrorCode::Io, "err.generic").with_detail(format!("ShellExecuteExW failed (HRESULT 0x{:08X})", e.code().0 as u32))
+            AppError::new(ErrorCode::Io, "err.generic").with_detail(format!(
+                "ShellExecuteExW failed (HRESULT 0x{:08X})",
+                e.code().0 as u32
+            ))
         });
     }
     unsafe {
         WaitForSingleObject(info.hProcess, INFINITE);
         let _ = CloseHandle(info.hProcess);
     }
-    let report: Option<ElevatedResult> = std::fs::read(&result).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    let report: Option<ElevatedResult> = std::fs::read(&result)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
     cleanup();
     match report {
         Some(r) => from_result(r),
@@ -303,13 +381,23 @@ mod tests {
     use super::*;
 
     fn exchange(name: &str) -> String {
-        temp_dir().unwrap().join(name).to_string_lossy().into_owned()
+        temp_dir()
+            .unwrap()
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
     }
     fn result_path() -> String {
         exchange(&format!("{}.result.json", uuid::Uuid::new_v4()))
     }
     fn args(json: &str) -> Vec<String> {
-        vec!["claude-switcher.exe".into(), "--elevated".into(), json.into(), "--result".into(), result_path()]
+        vec![
+            "claude-switcher.exe".into(),
+            "--elevated".into(),
+            json.into(),
+            "--result".into(),
+            result_path(),
+        ]
     }
 
     #[test]
@@ -319,15 +407,36 @@ mod tests {
     }
     #[test]
     fn accepts_import_sessions_for_valid_names_only() {
-        let (op, _, _) = parse_args(&args(r#"{"op":"import_sessions","name":"claude-kantor"}"#)).unwrap();
-        assert_eq!(op, ElevatedOp::ImportSessions { name: "claude-kantor".into() });
-        assert!(parse_args(&args(r#"{"op":"import_sessions","name":"Irsal"}"#)).is_err());
+        let (op, _, _) =
+            parse_args(&args(r#"{"op":"import_sessions","name":"claude-kantor"}"#)).unwrap();
+        assert_eq!(
+            op,
+            ElevatedOp::ImportSessions {
+                name: "claude-kantor".into()
+            }
+        );
+        assert!(parse_args(&args(r#"{"op":"import_sessions","name":"alice"}"#)).is_err());
     }
     #[test]
     fn known_message_ids_survive_the_elevated_boundary() {
-        let e = from_result(ElevatedResult { ok: false, win32: None, detail: None, message_id: Some("err.import_no_signin".into()) }).unwrap_err();
-        assert_eq!((e.code, e.message_id), (ErrorCode::NotFound, "err.import_no_signin"));
-        assert!(from_result(ElevatedResult { ok: true, win32: None, detail: None, message_id: None }).is_ok());
+        let e = from_result(ElevatedResult {
+            ok: false,
+            win32: None,
+            detail: None,
+            message_id: Some("err.import_no_signin".into()),
+        })
+        .unwrap_err();
+        assert_eq!(
+            (e.code, e.message_id),
+            (ErrorCode::NotFound, "err.import_no_signin")
+        );
+        assert!(from_result(ElevatedResult {
+            ok: true,
+            win32: None,
+            detail: None,
+            message_id: None
+        })
+        .is_ok());
     }
     #[test]
     fn rejects_unknown_op() {
@@ -335,14 +444,23 @@ mod tests {
     }
     #[test]
     fn rejects_missing_result_file() {
-        let a: Vec<String> = vec!["x".into(), "--elevated".into(), r#"{"op":"delete_user","name":"claude-kantor"}"#.into()];
+        let a: Vec<String> = vec![
+            "x".into(),
+            "--elevated".into(),
+            r#"{"op":"delete_user","name":"claude-kantor"}"#.into(),
+        ];
         assert!(parse_args(&a).is_err());
     }
     #[test]
     fn accepts_create() {
         let a = args(r#"{"op":"create_user","name":"claude-kantor"}"#);
         let (op, secret, result) = parse_args(&a).unwrap();
-        assert_eq!(op, ElevatedOp::CreateUser { name: "claude-kantor".into() });
+        assert_eq!(
+            op,
+            ElevatedOp::CreateUser {
+                name: "claude-kantor".into()
+            }
+        );
         assert_eq!(secret, None);
         assert_eq!(result, std::path::PathBuf::from(&a[4]));
     }
@@ -380,16 +498,21 @@ mod tests {
     }
     #[test]
     fn create_and_set_password_require_secret_at_run() {
-        let op = ElevatedOp::SetPassword { name: "claude-kantor".into() };
+        let op = ElevatedOp::SetPassword {
+            name: "claude-kantor".into(),
+        };
         assert!(run_elevated(&op, None).is_err());
     }
     #[test]
     fn command_line_roundtrips() {
-        let op = ElevatedOp::DeleteUser { name: "claude-kantor".into() };
+        let op = ElevatedOp::DeleteUser {
+            name: "claude-kantor".into(),
+        };
         let r = result_path();
         let line = command_line(&op, None, std::path::Path::new(&r));
-        let parsed: Vec<String> = std::iter::once("x".to_string()).chain(split_args(&line)).collect();
+        let parsed: Vec<String> = std::iter::once("x".to_string())
+            .chain(split_args(&line))
+            .collect();
         assert_eq!(parse_args(&parsed).unwrap().0, op);
     }
 }
-
