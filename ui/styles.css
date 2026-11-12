@@ -1,0 +1,202 @@
+/* Claude Switcher tray panel — achromatic-ledger style (seed 15332256).
+   Face: a blue-grey "meter" ground; the one data hue marks Claude's share of RAM.
+   Grid: panel 320px = 16 + 288 + 16; every block shares the 16px edges. One gap: 12px. */
+
+:root {
+  color-scheme: light dark;
+  --ground: #f2f4f7;
+  --surface: #ffffff;
+  --raised: #e7eaef;
+  --border: #dde1e7;
+  --rule: #e9ecf0;
+  --control: #b9bfc8;
+  --text: #0a0a0a;
+  --muted: #5c6168;          /* 5.9:1 on --ground */
+  --primary: #141414;
+  --on-primary: #ffffff;
+  --data: #1d5fbf;           /* the one hue: Claude's RAM */
+  --other: #8a9099;
+  --negative: #b3261e;       /* 5.9:1 on white */
+  --positive: #2e7d32;
+  --focus: #0a0a0a;
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.14);
+
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --gap: 0.75rem;            /* 12px */
+  --edge: 1rem;              /* 16px */
+  --control-height: 2.25rem; /* 36px */
+  --row-height: 3.25rem;     /* 52px: two-line rows */
+  --fs-title: 1rem;
+  --fs-body: 0.875rem;
+  --fs-small: 0.75rem;
+  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #111111;
+    --surface: #1b1b1b;
+    --raised: #262626;
+    --border: #2e2e2e;
+    --rule: #242424;
+    --control: #5a5a5a;
+    --text: #ffffff;
+    --muted: #b4b4b4;
+    --primary: #ffffff;
+    --on-primary: #0a0a0a;
+    --data: #6ea0ef;         /* 3:1+ on dark surfaces */
+    --other: #6f747c;
+    --negative: #ff8a80;
+    --positive: #6fcf74;
+    --focus: #ffffff;
+    --shadow-float: 0 8px 24px rgb(0 0 0 / 0.5);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 400 var(--fs-body)/1.43 var(--font);
+  color: var(--text);
+  background: var(--ground);
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+[hidden] { display: none !important; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.panel {
+  display: flex; flex-direction: column; gap: var(--gap);
+  padding: var(--edge);
+}
+
+/* Header: mark, title, running count */
+.head { display: flex; align-items: center; gap: 0.5rem; }
+.mark { width: 1.25rem; height: 1.25rem; flex: none; }
+.mark-back { fill: var(--other); }
+.mark-front { fill: var(--text); }
+h1 { font-size: var(--fs-title); font-weight: 600; margin: 0; flex: 1; }
+.count { margin: 0; color: var(--muted); font-size: var(--fs-small); }
+
+/* RAM strip: the signature element */
+.ram { display: flex; flex-direction: column; gap: 0.375rem; }
+.finding { margin: 0; color: var(--text); }
+.strip {
+  display: flex; gap: 2px; height: 0.5rem;
+  border-radius: 999px; overflow: hidden; background: var(--raised);
+}
+.strip span { display: block; height: 100%; }
+.strip .seg-claude { background: var(--data); }
+.strip .seg-other { background: var(--other); }
+.legend { display: flex; flex-wrap: wrap; column-gap: var(--gap); row-gap: 0.25rem; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: var(--fs-small); }
+.legend li { display: flex; align-items: center; gap: 0.375rem; }
+.legend i { width: 0.5rem; height: 0.5rem; border-radius: 999px; display: inline-block; }
+.legend .key-claude { background: var(--data); }
+.legend .key-other { background: var(--other); }
+.legend .key-free { background: var(--raised); box-shadow: inset 0 0 0 1px var(--control); }
+
+/* Accounts list: one card, rows split by rules */
+.accounts {
+  margin: 0; padding: 0; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+}
+.account {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  min-height: var(--row-height); padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+}
+.account + .account { border-top: 1px solid var(--rule); }
+.who { flex: 1 1 7rem; min-width: 0; }
+.name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state { display: flex; align-items: center; gap: 0.375rem; color: var(--muted); font-size: var(--fs-small); }
+.dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; flex: none; border: 1.5px solid var(--other); }
+.is-running .dot { background: var(--data); border-color: var(--data); }
+.is-opening .dot { border-style: dashed; border-color: var(--data); }
+.is-problem .dot { border-radius: 1px; background: var(--negative); border-color: var(--negative); transform: rotate(45deg); }
+.is-problem .state { color: var(--negative); }
+
+/* Buttons */
+.primary, .secondary, .ghost, .kebab {
+  min-height: var(--control-height); border-radius: var(--radius-control);
+  padding: 0 0.875rem; cursor: pointer; font-weight: 500;
+  transition: background-color 120ms, border-color 120ms;
+}
+.primary { background: var(--primary); color: var(--on-primary); border: 1px solid var(--primary); }
+.primary:hover { opacity: 0.88; }
+.secondary { background: var(--surface); border: 1px solid var(--control); }
+.secondary:hover, .ghost:hover, .kebab:hover { background: var(--raised); }
+.ghost { background: transparent; border: 1px solid var(--control); min-height: 2rem; min-width: 6.25rem; padding: 0 0.75rem; }
+.kebab {
+  width: 2rem; min-height: 2rem; padding: 0; background: transparent; border: 1px solid transparent;
+  display: grid; place-items: center; color: var(--muted);
+}
+.kebab svg { width: 1rem; height: 1rem; fill: currentColor; }
+button:disabled { cursor: not-allowed; opacity: 0.6; }
+.danger { background: var(--negative); border-color: var(--negative); color: #fff; }
+
+/* Add account */
+.add { display: flex; flex-direction: column; gap: var(--gap); }
+.add > .primary { width: 100%; }
+.add-form { display: flex; flex-direction: column; gap: 0.5rem; }
+label { font-weight: 500; }
+input[type="text"] {
+  min-height: var(--control-height); padding: 0 0.625rem;
+  background: var(--surface); border: 1px solid var(--control); border-radius: var(--radius-control);
+}
+.hint { margin: 0; color: var(--muted); font-size: var(--fs-small); }
+.field-error { margin: 0; color: var(--negative); font-size: var(--fs-small); }
+.field-error:empty { display: none; }
+.row-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* Footer */
+.foot { padding-top: 0.25rem; }
+.switch { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; cursor: pointer; min-height: 1.5rem; }
+.switch input { width: 1.5rem; height: 1.5rem; margin: 0; accent-color: var(--primary); }
+
+.alert { margin: 0; padding: 0.5rem 0.75rem; border-radius: var(--radius-control); background: var(--surface); border: 1px solid var(--negative); color: var(--negative); }
+.alert:empty { display: none; }
+
+/* Menu and dialog float, so they may carry a shadow */
+.menu {
+  position: fixed; z-index: 10; min-width: 10rem; padding: 0.25rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+}
+.menu [role="menuitem"] {
+  display: block; width: 100%; text-align: left; min-height: 2rem; padding: 0 0.75rem;
+  background: transparent; border: 0; border-radius: 4px; cursor: pointer;
+}
+.menu [role="menuitem"]:hover, .menu [role="menuitem"]:focus-visible { background: var(--raised); outline-offset: -2px; }
+.menu .menu-danger { color: var(--negative); }
+
+dialog {
+  width: calc(100vw - 2 * var(--edge)); max-width: 18rem; padding: var(--edge);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-float);
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog h2 { font-size: var(--fs-title); font-weight: 600; margin: 0 0 0.5rem; }
+dialog p { margin: 0 0 var(--gap); }
+dialog .field { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: var(--gap); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+@media (forced-colors: active) {
+  .strip, .legend i, .dot { forced-color-adjust: none; }
+  .strip { background: Canvas; outline: 1px solid CanvasText; }
+  .strip .seg-claude, .legend .key-claude, .is-running .dot { background: Highlight; border-color: Highlight; }
+  .strip .seg-other, .legend .key-other { background: GrayText; }
+  .legend .key-free { background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+  .dot { border-color: CanvasText; }
+  .is-problem .dot { background: CanvasText; }
+  .primary, .secondary, .ghost, .kebab { border: 1px solid ButtonText; }
+  .accounts, .menu, dialog, .alert { border: 1px solid CanvasText; }
+}

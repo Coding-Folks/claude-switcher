@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Switcher</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="strings.js"></script>
+  <script src="mock-invoke.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="panel" aria-labelledby="title">
+    <header class="head">
+      <svg class="mark" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <rect x="2" y="5" width="11" height="11" rx="2.5" class="mark-back"/>
+        <rect x="7" y="2" width="11" height="11" rx="2.5" class="mark-front"/>
+      </svg>
+      <h1 id="title" data-s="title"></h1>
+      <p class="count num" id="count"></p>
+    </header>
+
+    <section class="ram" aria-labelledby="ram-finding">
+      <p class="finding" id="ram-finding"></p>
+      <div class="strip" id="ram-strip" role="img"></div>
+      <ul class="legend" id="ram-legend"></ul>
+    </section>
+
+    <ul class="accounts" id="accounts" aria-labelledby="title"></ul>
+
+    <div class="add">
+      <button type="button" class="primary" id="add-open" data-s="add_account" aria-expanded="false" aria-controls="add-form"></button>
+      <form id="add-form" class="add-form" hidden novalidate>
+        <label for="add-label" data-s="add_label"></label>
+        <input id="add-label" name="label" type="text" maxlength="40" autocomplete="off" aria-describedby="add-hint add-error">
+        <p class="hint" id="add-hint" data-s="add_hint"></p>
+        <p class="field-error" id="add-error" role="alert"></p>
+        <div class="row-actions">
+          <button type="button" class="secondary" id="add-cancel" data-s="cancel"></button>
+          <button type="submit" class="primary" id="add-submit" data-s="add_submit"></button>
+        </div>
+      </form>
+    </div>
+
+    <footer class="foot">
+      <label class="switch">
+        <input type="checkbox" id="autostart" role="switch">
+        <span data-s="autostart"></span>
+      </label>
+    </footer>
+
+    <div class="live visually-hidden" id="live" aria-live="polite"></div>
+    <p class="alert" id="alert" role="alert"></p>
+  </main>
+
+  <div class="menu" id="menu" role="menu" hidden></div>
+
+  <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-body"></p>
+      <div class="field" id="confirm-field" hidden>
+        <label for="confirm-input" data-s="rename_label"></label>
+        <input id="confirm-input" type="text" maxlength="40" autocomplete="off">
+      </div>
+      <div class="row-actions">
+        <button value="cancel" class="secondary" id="confirm-cancel" data-s="cancel"></button>
+        <button value="ok" class="primary" id="confirm-ok"></button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
