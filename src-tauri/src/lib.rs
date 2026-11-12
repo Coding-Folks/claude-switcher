@@ -101,6 +101,17 @@ pub fn run() {
             if first_run {
                 tray::show_panel(&handle, None); // first launch: show where the app lives
             }
+            {
+                // The autostart entry stores an exe path. After an install, update or move it can point
+                // at an old copy, so while autostart is on, rewrite it to the exe that is running now.
+                use tauri_plugin_autostart::ManagerExt;
+                let auto = handle.autolaunch();
+                if auto.is_enabled().unwrap_or(false) {
+                    if let Err(e) = auto.enable() {
+                        applog::error("autostart path not refreshed", &[("detail", &e.to_string())]);
+                    }
+                }
+            }
             applog::info("started", &[("first_run", if first_run { "yes" } else { "no" })]);
             Ok(())
         })
