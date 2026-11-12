@@ -339,6 +339,7 @@
   // ---------- boot ----------
   document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
   listen("status", () => refresh());
+  listen("open-add", () => setAddOpen(true)); // tray menu "Tambah akun…"
   listen("progress", (ev) => announce(t("progress_" + ev.payload.step)));
   refresh().then(() => {
     const first = $("accounts").querySelector('[data-role="primary"]:not(:disabled)');

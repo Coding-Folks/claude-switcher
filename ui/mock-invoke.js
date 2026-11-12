@@ -76,5 +76,6 @@
       return handlers[cmd](args || {});
     },
     listen: async (ev, cb) => { (listeners[ev] ||= []).push(cb); return () => {}; },
+    emit, // tests stand in for Rust events (e.g. the tray menu)
   };
 })();

@@ -227,6 +227,13 @@ test('each row keeps its options button beside the main button', async ({ page }
   }
 });
 
+test('the tray menu "Tambah akun…" opens the add form directly', async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => (window as any).__MOCK__.emit('open-add', null));
+  await expect(page.getByLabel('Nama akun')).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Buat akun' })).toBeInViewport();
+});
+
 test('add with empty name explains the field', async ({ page }) => {
   await ready(page);
   await page.getByRole('button', { name: 'Tambah akun' }).click();

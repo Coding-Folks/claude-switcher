@@ -5,7 +5,7 @@ use crate::commands::AppState;
 use crate::flows::{AccountState, AccountView, OpenOutcome};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, PhysicalPosition, Rect};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Rect};
 
 const TRAY_ID: &str = "main";
 
@@ -69,7 +69,11 @@ pub fn rebuild(app: &AppHandle) {
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
         "quit" => app.exit(0),
-        "add" | "panel" => show_panel(app, None),
+        "panel" => show_panel(app, None),
+        "add" => {
+            show_panel(app, None);
+            let _ = app.emit("open-add", ());
+        }
         _ => {
             if let Some(acc) = id.strip_prefix("open:") {
                 let app = app.clone();
