@@ -258,7 +258,13 @@
     $("add-form").hidden = !open;
     $("add-open").hidden = open;
     $("add-open").setAttribute("aria-expanded", String(open));
-    if (open) { document.querySelector("input[name=mode][value=same_user]").checked = true; $("add-label").focus(); } else { $("add-error").textContent = ""; $("add-open").focus(); }
+    if (open) {
+      document.querySelector("input[name=mode][value=same_user]").checked = true;
+      $("add-label").focus();
+      fitWindow();
+      // With several accounts the form starts below the fold: bring its whole height, up to Buat akun, into view.
+      $("add-form").scrollIntoView({ block: "end" });
+    } else { $("add-error").textContent = ""; $("add-open").focus(); }
     fitWindow();
   }
   $("add-open").addEventListener("click", () => setAddOpen(true));
@@ -323,7 +329,9 @@
   // Size the native window to the content (Tauri only; max 480px, spec §5).
   function fitWindow() {
     if (!tauri || !tauri.window) return;
-    const h = Math.min(480, Math.ceil(document.querySelector(".panel").scrollHeight));
+    // Grow with the content up to the screen's work area (spec said 480px; too short once the add form opens).
+    const max = Math.max(480, (window.screen.availHeight || 480) - 32);
+    const h = Math.min(max, Math.ceil(document.querySelector(".panel").scrollHeight));
     const { LogicalSize, getCurrentWindow } = tauri.window;
     getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
   }

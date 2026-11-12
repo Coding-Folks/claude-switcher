@@ -112,7 +112,7 @@ h1 { font-size: var(--fs-title); font-weight: 600; margin: 0; flex: 1; }
   min-height: var(--row-height); padding: 0.5rem 0.5rem 0.5rem 0.75rem;
 }
 .account + .account { border-top: 1px solid var(--rule); }
-.who { flex: 1 1 7rem; min-width: 0; }
+.who { flex: 1 1 5rem; min-width: 0; } /* small basis: actions stay on the row even when a scrollbar narrows the panel */
 .name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .state { display: flex; align-items: center; gap: 0.375rem; color: var(--muted); font-size: var(--fs-small); }
 .dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; flex: none; border: 1.5px solid var(--other); }

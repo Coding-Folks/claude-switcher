@@ -210,6 +210,23 @@ test('opening a slot whose folder was deleted says so', async ({ page }) => {
   await expect(page.locator('#live')).toContainText('dibuat ulang');
 });
 
+test('with many accounts the open add form shows its submit button', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('button', { name: 'Tambah akun' }).click();
+  await expect(page.getByRole('button', { name: 'Buat akun' })).toBeInViewport();
+  await expect(page.getByRole('group', { name: 'Jalankan di' })).toBeInViewport();
+});
+
+test('each row keeps its options button beside the main button', async ({ page }) => {
+  await page.setViewportSize({ width: 303, height: 480 }); // 320px window minus a classic Windows scrollbar
+  await ready(page);
+  for (const r of await page.locator('.account').all()) {
+    const main = (await r.locator('[data-role="primary"]').boundingBox())!;
+    const kebab = (await r.locator('[data-role="menu"]').boundingBox())!;
+    expect(Math.abs(main.y + main.height / 2 - (kebab.y + kebab.height / 2)), await r.locator('.name').innerText()).toBeLessThan(6);
+  }
+});
+
 test('add with empty name explains the field', async ({ page }) => {
   await ready(page);
   await page.getByRole('button', { name: 'Tambah akun' }).click();
