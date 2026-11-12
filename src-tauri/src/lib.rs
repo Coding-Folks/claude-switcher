@@ -2,6 +2,8 @@ pub mod error;
 pub mod naming;
 pub mod store;
 pub mod vault;
+pub mod elevated;
+pub mod winuser;
 
 pub fn run() {
     tauri::Builder::default()
