@@ -38,6 +38,8 @@ pub trait Platform: Send + Sync {
     fn slot_data_dir(&self, data_root: &Path) -> PathBuf;
     fn slot_prepare(&self, data_root: &Path) -> AppResult<()>;
     fn slot_ready(&self, data_root: &Path) -> bool;
+    /// The slot's Claude data (its login) exists, whatever the junction's state.
+    fn slot_has_data(&self, data_root: &Path) -> bool;
     /// Deletes the whole slot: the parent of `data_root`, i.e. `<slots>\<id>`.
     fn slot_remove(&self, data_root: &Path) -> AppResult<()>;
     fn launch_slot(&self, data_root: &Path) -> AppResult<()>;
@@ -152,6 +154,9 @@ impl Platform for WinPlatform {
     }
     fn slot_ready(&self, data_root: &Path) -> bool {
         crate::slot::is_ready(data_root, &self.pkg.family, &self.real_windowsapps())
+    }
+    fn slot_has_data(&self, data_root: &Path) -> bool {
+        crate::slot::has_data(data_root, &self.pkg.family)
     }
     fn slot_remove(&self, data_root: &Path) -> AppResult<()> {
         let slot_dir = data_root.parent().ok_or_else(|| AppError::io("slot has no parent folder"))?;

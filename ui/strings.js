@@ -81,6 +81,7 @@ window.STRINGS = {
   "err.store_corrupt": "Daftar akun rusak dan sudah dicadangkan ke {detail}. Daftar dimulai ulang; user Windows akun lama masih ada.",
   "err.not_found": "Akun tidak ditemukan.",
   "err.slot_prepare": "Gagal menyiapkan folder akun.",
+  "err.still_running": "Claude di akun ini belum tertutup. Tutup jendelanya, lalu coba lagi.",
   "err.slot_unsupported": "Versi Claude ini tidak lagi memakai folder akun ini. Hapus akun ini, lalu tambahkan lagi dengan pilihan User Windows terpisah.",
   "err.import_no_signin": "Login dulu ke Claude di akun ini, lalu impor riwayat lagi.",
   "err.open_timeout": "Claude tidak terbuka dalam 30 detik.",

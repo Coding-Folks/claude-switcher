@@ -63,6 +63,8 @@ pub struct Flows<P: Platform> {
     write: Mutex<()>,
     opening: Mutex<HashMap<String, Instant>>,
     problems: Mutex<HashSet<String>>,
+    /// How long close_and_wait waits for Claude to go (10 s; shorter in tests).
+    close_wait: Mutex<Duration>,
     /// Set when accounts.json was corrupt at startup; the UI shows it once.
     pub recovered_backup: Mutex<Option<std::path::PathBuf>>,
 }
@@ -79,8 +81,13 @@ impl<P: Platform> Flows<P> {
             write: Mutex::new(()),
             opening: Mutex::new(HashMap::new()),
             problems: Mutex::new(HashSet::new()),
+            close_wait: Mutex::new(Duration::from_secs(10)),
             recovered_backup: Mutex::new(None),
         }
+    }
+
+    pub fn set_close_wait(&self, d: Duration) {
+        *self.close_wait.lock().unwrap() = d;
     }
 
     /// True while some account is waiting for its Claude window; the poller then keeps refreshing.
@@ -172,11 +179,13 @@ impl<P: Platform> Flows<P> {
     fn close_and_wait(&self, a: &Account) -> AppResult<()> {
         if let Some((pid, _)) = self.running_root(a, &self.p.snapshot()) {
             self.p.close(pid, a.windows_user.as_deref())?;
-            for _ in 0..20 {
-                if self.running_root(a, &self.p.snapshot()).is_none() {
-                    break;
+            let deadline = Instant::now() + *self.close_wait.lock().unwrap();
+            while self.running_root(a, &self.p.snapshot()).is_some() {
+                if Instant::now() >= deadline {
+                    // Writing or deleting its files now would hit locked files: stop and say so.
+                    return Err(AppError::new(ErrorCode::Io, "err.still_running"));
                 }
-                std::thread::sleep(Duration::from_millis(500));
+                std::thread::sleep(Duration::from_millis(100));
             }
         }
         Ok(())
@@ -345,8 +354,9 @@ impl<P: Platform> Flows<P> {
             AccountKind::SameUser => {
                 let root = Self::data_root(&a)?;
                 if !running && !self.p.slot_ready(root) {
-                    self.p.slot_prepare(root)?; // folder deleted outside the app: make it again
-                    recreated = true;
+                    // Only a missing data folder means the login is gone; a missing junction is fixed quietly.
+                    recreated = !self.p.slot_has_data(root);
+                    self.p.slot_prepare(root)?;
                 }
                 self.p.launch_slot(root)
             }
@@ -525,6 +535,8 @@ mod tests {
         junction_broken: Mutex<HashSet<String>>,
         report: Mutex<Option<BootstrapReport>>,
         slot_missing: Mutex<HashSet<String>>,
+        slot_no_data: Mutex<HashSet<String>>,
+        stuck: Mutex<bool>,
         move_labels: Mutex<HashMap<String, String>>,
     }
     impl Fake {
@@ -584,7 +596,8 @@ mod tests {
         fn launch_as(&self, user: &str, _pw: &Zeroizing<String>) -> AppResult<()> { self.check("launch_as")?; self.log(format!("launch_as {user}")); Ok(()) }
         fn close(&self, root_pid: u32, as_user: Option<&str>) -> AppResult<()> {
             self.log(format!("close {root_pid} {}", as_user.unwrap_or("main")));
-            self.running.lock().unwrap().retain(|i| i.root_pid != root_pid); Ok(())
+            if !*self.stuck.lock().unwrap() { self.running.lock().unwrap().retain(|i| i.root_pid != root_pid); }
+            Ok(())
         }
         fn snapshot(&self) -> Snapshot {
             Snapshot { instances: self.running.lock().unwrap().clone(), free_ram: *self.free.lock().unwrap(), total_ram: 24 * GB }
@@ -599,6 +612,7 @@ mod tests {
             self.slot_missing.lock().unwrap().remove(&r.display().to_string()); Ok(())
         }
         fn slot_ready(&self, r: &Path) -> bool { !self.slot_missing.lock().unwrap().contains(&r.display().to_string()) }
+        fn slot_has_data(&self, r: &Path) -> bool { !self.slot_no_data.lock().unwrap().contains(&r.display().to_string()) }
         fn slot_remove(&self, r: &Path) -> AppResult<()> { self.check("slot_remove")?; self.log(format!("slot_remove {}", r.display())); Ok(()) }
         fn launch_slot(&self, r: &Path) -> AppResult<()> { self.check("launch_slot")?; self.log(format!("launch_slot {}", r.display())); Ok(()) }
         fn slot_move_label(&self, r: &Path) -> Option<String> {
@@ -706,8 +720,30 @@ mod tests {
         let (f, _) = flows();
         let (id, root) = add_slot(&f, "A");
         f.p.slot_missing.lock().unwrap().insert(root.clone());
+        f.p.slot_no_data.lock().unwrap().insert(root.clone());
         assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::SlotRecreated);
         assert_eq!(f.p.calls(), vec![format!("slot_prepare {root}"), format!("launch_slot {root}")]);
+    }
+
+    #[test]
+    fn open_with_only_the_junction_missing_repairs_it_quietly() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.slot_missing.lock().unwrap().insert(root.clone()); // not ready, but the login data is still there
+        assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::Launched);
+        assert_eq!(f.p.calls(), vec![format!("slot_prepare {root}"), format!("launch_slot {root}")]);
+    }
+
+    #[test]
+    fn remove_stops_when_claude_will_not_close() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.set_close_wait(Duration::from_millis(20));
+        *f.p.stuck.lock().unwrap() = true;
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        assert!(f.remove(&id).is_err());
+        assert!(!f.p.calls().iter().any(|c| c.starts_with("slot_remove")), "{:?}", f.p.calls());
+        assert!(f.accounts().unwrap().iter().any(|a| a.id == id));
     }
 
     #[test]
