@@ -149,8 +149,10 @@ pub fn is_junction_to(link: &Path, target: &Path) -> bool {
     let Ok(dest) = std::fs::read_link(link) else {
         return false;
     };
-    let want = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
-    plain(&dest) == plain(&want)
+    // Resolve both sides to their final long form: a junction may store an 8.3 short path
+    // (C:\Users\RUNNER~1\…) while the caller passes the long one, or the other way round.
+    let fin = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    plain(&fin(&dest)) == plain(&fin(target))
 }
 
 /// Deletes `profile_dir`. Reparse points (junctions, symlinks) are unlinked, never descended into.
@@ -270,6 +272,32 @@ mod tests {
         assert!(is_junction_to(&link, &target));
         assert_eq!(std::fs::read_to_string(link.join("f.txt")).unwrap(), "x");
         assert!(create_junction(&link, &target).is_err()); // never over an existing entry
+    }
+
+    /// The 8.3 short form of an existing path (same as the input when short names are off).
+    fn short_path(p: &Path) -> PathBuf {
+        use windows::core::HSTRING;
+        use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+        let wide = HSTRING::from(p.as_os_str());
+        let mut buf = vec![0u16; 1024];
+        let n = unsafe { GetShortPathNameW(&wide, Some(&mut buf)) } as usize;
+        PathBuf::from(String::from_utf16_lossy(&buf[..n]))
+    }
+
+    #[test]
+    fn junction_to_a_short_8_3_path_still_matches_the_long_path() {
+        // CI runners (and some profiles) live under C:\Users\RUNNER~1\…: a junction may store either form.
+        let root = std::env::temp_dir().join(format!(
+            "cs-a-rather-long-folder-name-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let target = root.join("target-with-a-long-name");
+        std::fs::create_dir_all(&target).unwrap();
+        let short = short_path(&target);
+        let link = root.join("link");
+        mklink_j(&link, &short);
+        assert!(is_junction_to(&link, &target), "short={}", short.display());
+        assert!(is_junction_to(&link, &short));
     }
 
     #[test]

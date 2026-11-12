@@ -257,8 +257,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exists_finds_builtin_and_rejects_unknown() {
-        assert!(exists("Administrator"));
+    fn exists_finds_this_user_and_rejects_unknown() {
+        // The account running the tests always exists ("Administrator" may be renamed or absent, e.g. on CI).
+        assert!(exists(&std::env::var("USERNAME").unwrap()));
         assert!(!exists("claude-nope-zz9"));
     }
 
