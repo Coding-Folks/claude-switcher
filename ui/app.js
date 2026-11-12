@@ -291,6 +291,18 @@
     const next = rows[i + (e.key === "ArrowDown" ? 1 : -1)];
     if (next) { e.preventDefault(); next.querySelector(`[data-role="${role}"]`).focus(); }
   });
+  // The panel is a tray flyout: Tab off either end would move focus out of the WebView, the window
+  // would lose focus and hide. Wrap instead, like any flyout (Esc still closes it).
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || $("confirm").open || !$("menu").hidden) return;
+    const items = [...document.querySelectorAll(".panel button, .panel input")]
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && (document.activeElement === first || !items.includes(document.activeElement))) { e.preventDefault(); last.focus(); }
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
     if ($("confirm").open) return;                // the dialog handles its own Escape

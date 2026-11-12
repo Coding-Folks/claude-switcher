@@ -51,6 +51,15 @@ test('keyboard: arrow moves between rows, Enter opens', async ({ page }) => {
   await expect(page.locator('#live')).toHaveText('Klien dibuka.');
 });
 
+test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus never leaves the panel)', async ({ page }) => {
+  await ready(page);
+  await page.locator('#autostart').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Tampilkan Utama' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#autostart')).toBeFocused();
+});
+
 test('escape closes menu then returns focus to its button', async ({ page }) => {
   await ready(page);
   const kebab = row(page, 'Kantor').getByRole('button', { name: 'Opsi untuk Kantor' });
