@@ -192,6 +192,7 @@ impl<P: Platform> Flows<P> {
             kind: AccountKind::WindowsUser,
             windows_user: Some(user.clone()),
             created_at: chrono::Utc::now().to_rfc3339(),
+            data_root: None,
         };
         {
             let _w = self.write.lock().unwrap();
@@ -220,6 +221,7 @@ impl<P: Platform> Flows<P> {
         }
         let result = match a.kind {
             AccountKind::Main => self.p.launch_main(),
+            AccountKind::SameUser => todo!("same-user open: Task 4"),
             AccountKind::WindowsUser => {
                 let user = Self::user(&a)?;
                 let pw = self.p.vault_get(user)?;
@@ -450,7 +452,7 @@ mod tests {
     }
     fn add_existing(f: &Flows<Fake>, label: &str, user: &str) -> String {
         let mut list = f.accounts().unwrap();
-        let a = Account { id: format!("id-{user}"), label: label.into(), kind: AccountKind::WindowsUser, windows_user: Some(user.into()), created_at: "2026-11-12T00:00:00Z".into() };
+        let a = Account { id: format!("id-{user}"), label: label.into(), kind: AccountKind::WindowsUser, windows_user: Some(user.into()), created_at: "2026-11-12T00:00:00Z".into(), data_root: None };
         list.push(a.clone());
         f.store.save(&list).unwrap();
         f.p.users.lock().unwrap().insert(user.into());

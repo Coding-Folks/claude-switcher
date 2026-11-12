@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 pub enum AccountKind {
     Main,
     WindowsUser,
+    /// Same Windows user, own LOCALAPPDATA "slot" (see slot.rs).
+    SameUser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +20,9 @@ pub struct Account {
     pub kind: AccountKind,
     pub windows_user: Option<String>,
     pub created_at: String,
+    /// SameUser only: the slot folder used as LOCALAPPDATA for that Claude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_root: Option<PathBuf>,
 }
 
 impl Account {
@@ -28,6 +33,7 @@ impl Account {
             kind: AccountKind::Main,
             windows_user: None,
             created_at: chrono::Utc::now().to_rfc3339(),
+            data_root: None,
         }
     }
 }
@@ -98,7 +104,7 @@ mod tests {
         d
     }
     fn acct(label: &str, kind: AccountKind, user: Option<&str>) -> Account {
-        Account { id: uuid::Uuid::new_v4().to_string(), label: label.into(), kind, windows_user: user.map(Into::into), created_at: "2026-11-12T08:00:00Z".into() }
+        Account { id: uuid::Uuid::new_v4().to_string(), label: label.into(), kind, windows_user: user.map(Into::into), created_at: "2026-11-12T08:00:00Z".into(), data_root: None }
     }
 
     #[test]
@@ -139,6 +145,34 @@ mod tests {
         let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         assert_eq!(names, vec!["accounts.json".to_string()]);
     }
+    #[test]
+    fn same_user_roundtrips_with_data_root() {
+        let dir = tmp();
+        let s = Store::new(dir.join("accounts.json"));
+        let mut a = acct("Slot A", AccountKind::SameUser, None);
+        a.data_root = Some(PathBuf::from(r"C:\x\slots\id\Local"));
+        s.save(&[a.clone()]).unwrap();
+        assert_eq!(s.load().unwrap(), LoadOutcome::Ok(vec![a]));
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("accounts.json")).unwrap()).unwrap();
+        assert_eq!(v["accounts"][0]["kind"], "same_user");
+    }
+
+    #[test]
+    fn old_file_without_data_root_still_loads() {
+        let dir = tmp();
+        std::fs::write(dir.join("accounts.json"), r#"{"version":1,"accounts":[{"id":"1","label":"Utama","kind":"main","windows_user":null,"created_at":"x"}]}"#).unwrap();
+        let LoadOutcome::Ok(list) = Store::new(dir.join("accounts.json")).load().unwrap() else { panic!() };
+        assert_eq!(list[0].data_root, None);
+    }
+
+    #[test]
+    fn windows_user_account_does_not_write_data_root() {
+        let dir = tmp();
+        let s = Store::new(dir.join("accounts.json"));
+        s.save(&[acct("Kantor", AccountKind::WindowsUser, Some("claude-kantor"))]).unwrap();
+        assert!(!std::fs::read_to_string(dir.join("accounts.json")).unwrap().contains("data_root"));
+    }
+
     #[test]
     fn json_shape_is_versioned_snake_case() {
         let dir = tmp();
