@@ -2,22 +2,21 @@
 //! (accounts with a check when running, "Tambah akun…", "Keluar").
 
 use crate::commands::AppState;
-use crate::flows::{AccountState, OpenOutcome};
+use crate::flows::{AccountState, AccountView, OpenOutcome};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, PhysicalPosition, Rect};
 
 const TRAY_ID: &str = "main";
 
-fn build_menu(app: &AppHandle) -> tauri::Result<(Menu<tauri::Wry>, usize)> {
+/// Builds the menu from data computed elsewhere: this runs on the main thread, so it must not block.
+fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tauri::Wry>, usize)> {
     let menu = Menu::new(app)?;
     let mut running = 0;
-    if let Ok(flows) = &app.state::<AppState>().flows {
-        for v in flows.list().unwrap_or_default() {
-            let on = v.state == AccountState::Running;
-            running += on as usize;
-            menu.append(&CheckMenuItem::with_id(app, format!("open:{}", v.account.id), &v.account.label, true, on, None::<&str>)?)?;
-        }
+    for v in views {
+        let on = v.state == AccountState::Running;
+        running += on as usize;
+        menu.append(&CheckMenuItem::with_id(app, format!("open:{}", v.account.id), &v.account.label, true, on, None::<&str>)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "add", "Tambah akun…", true, None::<&str>)?)?;
@@ -30,7 +29,7 @@ fn tooltip(running: usize) -> String {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let (menu, running) = build_menu(app)?;
+    let (menu, running) = build_menu(app, &[])?; // filled by the first rebuild
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(tooltip(running))
         .menu(&menu)
@@ -48,15 +47,19 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Rebuilds the menu and tooltip (called whenever the status changes).
+/// Rebuilds the menu and tooltip (called whenever the status changes). The account list (process
+/// snapshot, SID lookups, accounts.json) is computed on a worker thread; only menu building runs on main.
 pub fn rebuild(app: &AppHandle) {
-    let app2 = app.clone();
-    // Menus must be built on the main thread.
-    let _ = app.run_on_main_thread(move || {
-        if let (Some(tray), Ok((menu, running))) = (app2.tray_by_id(TRAY_ID), build_menu(&app2)) {
-            let _ = tray.set_menu(Some(menu));
-            let _ = tray.set_tooltip(Some(tooltip(running)));
-        }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let views = app.state::<AppState>().flows.as_ref().ok().and_then(|f| f.list().ok()).unwrap_or_default();
+        let app2 = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let (Some(tray), Ok((menu, running))) = (app2.tray_by_id(TRAY_ID), build_menu(&app2, &views)) {
+                let _ = tray.set_menu(Some(menu));
+                let _ = tray.set_tooltip(Some(tooltip(running)));
+            }
+        });
     });
 }
 

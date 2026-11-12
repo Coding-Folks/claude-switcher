@@ -150,6 +150,15 @@ test('RAM finding and strip are computed from the rows', async ({ page }) => {
   await expect(page.locator('#ram-strip .seg-claude')).toHaveCount(2);
 });
 
+test('a corrupt account list is reported once with its backup', async ({ page }) => {
+  await ready(page, '&corrupt=1');
+  const alert = page.locator('#alert');
+  await expect(alert).toContainText('Daftar akun rusak dan sudah dicadangkan');
+  await expect(alert).toContainText('accounts.json.bad-20261112-170000');
+  await page.getByRole('button', { name: 'Buka Klien' }).click();
+  await expect(alert).toBeEmpty(); // shown once, cleared by the next action
+});
+
 test('targets at least 24px', async ({ page }) => {
   await ready(page);
   for (const b of await page.locator('button:visible, input:visible').all()) {

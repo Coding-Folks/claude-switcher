@@ -33,9 +33,6 @@ pub struct Snapshot {
     pub total_ram: u64,
 }
 
-fn lower(p: &Path) -> String {
-    p.to_string_lossy().to_lowercase()
-}
 
 fn is_desktop_claude(p: &ProcInfo, install_dir: &Path) -> bool {
     let name_ok = p.exe.file_name().map(|n| n.to_string_lossy().eq_ignore_ascii_case("claude.exe")).unwrap_or(false);
@@ -45,7 +42,23 @@ fn is_desktop_claude(p: &ProcInfo, install_dir: &Path) -> bool {
     if p.exe.parent().map(|d| d.as_os_str().is_empty()).unwrap_or(true) {
         return true; // path unreadable (another user's process): the name is all we have
     }
-    lower(&p.exe).starts_with(&lower(install_dir))
+    in_claude_package(&p.exe, install_dir)
+}
+
+/// `…\WindowsApps\Claude_<any version>_<arch>__<publisher>\app\Claude.exe`. Matching the package pattern
+/// instead of the startup install folder keeps instances visible after Claude updates itself.
+fn in_claude_package(exe: &Path, install_dir: &Path) -> bool {
+    let publisher = install_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.rsplit_once("__").map(|(_, p)| p.to_lowercase()))
+        .unwrap_or_else(|| crate::claude_pkg::FALLBACK_FAMILY.rsplit_once('_').map(|(_, p)| p.to_lowercase()).unwrap_or_default());
+    let parts: Vec<String> = exe.components().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect();
+    let Some(i) = parts.iter().position(|c| c == "windowsapps") else { return false };
+    match &parts[i + 1..] {
+        [pkg, app, file] => pkg.starts_with("claude_") && pkg.ends_with(&format!("__{publisher}")) && app == "app" && file == "claude.exe",
+        _ => false,
+    }
 }
 
 /// Roots are desktop Claude processes whose parent is not one; each root's bytes sum its whole tree.
@@ -245,6 +258,23 @@ mod tests {
         let mut p = claude(100, 4, "S-main", 10);
         p.exe = PathBuf::from(INSTALL.to_uppercase()).join(r"APP\CLAUDE.EXE");
         assert_eq!(instances(&[p], std::path::Path::new(INSTALL)).len(), 1);
+    }
+
+    #[test]
+    fn counts_claude_after_an_update_moved_its_folder() {
+        let mut p = claude(100, 4, "S-main", 10);
+        p.exe = PathBuf::from(r"C:\Program Files\WindowsApps\Claude_5.1300.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe");
+        assert_eq!(instances(&[p], std::path::Path::new(INSTALL)).len(), 1);
+    }
+
+    #[test]
+    fn ignores_claude_exe_outside_the_package() {
+        let mut p = claude(100, 4, "S-main", 10);
+        p.exe = PathBuf::from(r"C:\Tools\Claude.exe");
+        assert!(instances(&[p], std::path::Path::new(INSTALL)).is_empty());
+        let mut q = claude(101, 4, "S-main", 10);
+        q.exe = PathBuf::from(r"C:\Program Files\WindowsApps\SomethingElse_1.0_x64__abc\app\Claude.exe");
+        assert!(instances(&[q], std::path::Path::new(INSTALL)).is_empty());
     }
 
     #[test]

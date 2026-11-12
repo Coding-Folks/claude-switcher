@@ -32,7 +32,7 @@
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "windows": {
-      "nsis": { "installMode": "currentUser" }
+      "nsis": { "installMode": "perMachine" }
     }
   }
 }

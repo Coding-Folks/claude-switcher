@@ -61,7 +61,7 @@ window.STRINGS = {
   "err.logon_failed": "Windows menolak login akun ini. Pilih Perbaiki di menu opsinya.",
   "err.junction_broken": "Sambungan skills dan plugins rusak. Pilih Perbaiki.",
   "err.low_memory": "RAM tidak cukup untuk membuka akun lagi.",
-  "err.store_corrupt": "Daftar akun rusak dan sudah dicadangkan. Daftar dimulai ulang.",
+  "err.store_corrupt": "Daftar akun rusak dan sudah dicadangkan ke {detail}. Daftar dimulai ulang; user Windows akun lama masih ada.",
   "err.not_found": "Akun tidak ditemukan.",
   "err.open_timeout": "Claude tidak terbuka dalam 30 detik.",
   "err.generic": "Terjadi kesalahan: {detail}",

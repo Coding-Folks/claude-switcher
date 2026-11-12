@@ -15,6 +15,7 @@
     autostart: true,
     total_ram: Math.round(23.69 * GB),
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
+    recovered_backup: params.has("corrupt") ? "C:/Users/Irsal/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
   const emit = (ev, payload) => (listeners[ev] || []).forEach((cb) => cb({ payload }));
@@ -27,7 +28,7 @@
 
   const handlers = {
     async list_accounts() { return structuredClone(accounts); },
-    async get_settings() { return { ...settings }; },
+    async get_settings() { const out = { ...settings }; settings.recovered_backup = null; return out; },
     async set_autostart({ enabled }) { settings.autostart = enabled; },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {

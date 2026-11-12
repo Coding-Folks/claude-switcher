@@ -64,6 +64,17 @@ pub fn run() {
                     }
                 });
             }
+            if let Ok(f) = handle.state::<AppState>().flows.clone() {
+                // While an account is opening, keep refreshing so the 30 s timeout shows up (spec §4).
+                let h = handle.clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    if f.has_opening() {
+                        commands::refresh(&h);
+                    }
+                });
+            }
+            commands::refresh(&handle);
             if let Some(dir) = install_dir.clone() {
                 let h = handle.clone();
                 monitor::spawn_poller(dir, std::time::Duration::from_secs(5), move |_| commands::refresh(&h));

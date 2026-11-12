@@ -109,6 +109,8 @@
     try {
       [accounts, settings] = await Promise.all([invoke("list_accounts"), invoke("get_settings")]);
       render();
+      // Rust hands the backup path out once; say it once (spec §6).
+      if (settings.recovered_backup) showError({ message_id: "err.store_corrupt", detail: settings.recovered_backup });
     } catch (e) { showError(e); }
   }
   const byId = (id) => accounts.find((a) => a.account.id === id);

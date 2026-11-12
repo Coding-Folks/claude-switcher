@@ -68,6 +68,11 @@ impl<P: Platform> Flows<P> {
         }
     }
 
+    /// True while some account is waiting for its Claude window; the poller then keeps refreshing.
+    pub fn has_opening(&self) -> bool {
+        !self.opening.lock().unwrap().is_empty()
+    }
+
     pub fn platform(&self) -> &P {
         &self.p
     }
@@ -113,7 +118,7 @@ impl<P: Platform> Flows<P> {
     pub fn list(&self) -> AppResult<Vec<AccountView>> {
         let snap = self.p.snapshot();
         let mut opening = self.opening.lock().unwrap();
-        let problems = self.problems.lock().unwrap();
+        let mut problems = self.problems.lock().unwrap();
         Ok(self
             .accounts()?
             .into_iter()
@@ -121,6 +126,10 @@ impl<P: Platform> Flows<P> {
                 let run = self.running_root(&a, &snap);
                 if run.is_some() {
                     opening.remove(&a.id);
+                } else if opening.get(&a.id).map(|t| t.elapsed() >= OPEN_TIMEOUT).unwrap_or(false) {
+                    // Claude did not appear within 30 s (spec §4): report it instead of going quiet.
+                    opening.remove(&a.id);
+                    problems.insert(a.id.clone());
                 }
                 let state = if run.is_some() {
                     AccountState::Running
@@ -267,8 +276,12 @@ impl<P: Platform> Flows<P> {
         if let Some((pid, _)) = self.running_root(&a, &self.p.snapshot()) {
             self.p.close(pid, Some(&user))?;
         }
-        self.p.elevated(ElevatedOp::DeleteUser { name: user.clone() }, None)?;
-        let _ = self.p.revoke(&user);
+        // Revoke while the name still resolves to a SID; icacls cannot remove an ACE by a deleted name.
+        self.p.revoke(&user)?;
+        if let Err(e) = self.p.elevated(ElevatedOp::DeleteUser { name: user.clone() }, None) {
+            let _ = self.p.grant(&user); // the account stays, so give its access back
+            return Err(e);
+        }
         self.p.vault_delete(&user)?;
         let _w = self.write.lock().unwrap();
         let list: Vec<Account> = self.accounts()?.into_iter().filter(|x| x.id != id).collect();
@@ -287,6 +300,8 @@ impl<P: Platform> Flows<P> {
             return Ok(report);
         }
         let user = Self::user(&a)?.to_string();
+        // ~/.claude may have been recreated with a fresh ACL; re-granting is idempotent.
+        self.p.grant(&user)?;
         let pw = match self.p.vault_get(&user) {
             Ok(pw) => Some(pw),
             Err(e) if e.code == ErrorCode::NotFound => None,
@@ -567,7 +582,8 @@ mod tests {
         let id = add_existing(&f, "Kantor", "claude-kantor");
         f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB });
         f.remove(&id).unwrap();
-        assert_eq!(f.p.calls(), vec!["close 9 claude-kantor", "delete_user claude-kantor", "revoke claude-kantor", "vault_delete claude-kantor"]);
+        // the ACE is revoked while the account name still resolves
+        assert_eq!(f.p.calls(), vec!["close 9 claude-kantor", "revoke claude-kantor", "delete_user claude-kantor", "vault_delete claude-kantor"]);
         assert!(f.accounts().unwrap().iter().all(|a| a.id != id));
     }
 
@@ -579,6 +595,7 @@ mod tests {
         assert_eq!(f.remove(&id).unwrap_err().code, ErrorCode::UacCancelled);
         assert!(f.accounts().unwrap().iter().any(|a| a.id == id));
         assert!(f.p.vault.lock().unwrap().contains_key("claude-kantor"));
+        assert_eq!(f.p.calls(), vec!["revoke claude-kantor", "grant claude-kantor"]); // access restored
     }
 
     #[test]
@@ -588,7 +605,7 @@ mod tests {
         f.p.fail_once.lock().unwrap().insert("bootstrap", err(ErrorCode::LogonFailed));
         let r = f.repair(&id).unwrap();
         assert!(r.password_reset);
-        assert_eq!(f.p.calls(), vec!["set_password claude-kantor", "vault_put claude-kantor", "bootstrap claude-kantor"]);
+        assert_eq!(f.p.calls(), vec!["grant claude-kantor", "set_password claude-kantor", "vault_put claude-kantor", "bootstrap claude-kantor"]);
         assert_eq!(f.list().unwrap().iter().find(|v| v.account.id == id).unwrap().state, AccountState::Stopped);
     }
 
@@ -599,8 +616,20 @@ mod tests {
         f.p.junction_broken.lock().unwrap().insert("claude-kantor".into());
         let r = f.repair(&id).unwrap();
         assert!(!r.password_reset);
-        assert_eq!(f.p.calls(), vec!["bootstrap claude-kantor"]);
+        assert_eq!(f.p.calls(), vec!["grant claude-kantor", "bootstrap claude-kantor"]);
         assert!(f.p.junction_ok("claude-kantor"));
+    }
+
+    #[test]
+    fn open_timeout_marks_problem() {
+        let (f, _) = flows();
+        let id = add_existing(&f, "Kantor", "claude-kantor");
+        assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::Launched);
+        assert_eq!(f.list().unwrap().iter().find(|v| v.account.id == id).unwrap().state, AccountState::Opening);
+        f.opening.lock().unwrap().insert(id.clone(), Instant::now() - OPEN_TIMEOUT - Duration::from_secs(1));
+        assert!(f.has_opening());
+        assert_eq!(f.list().unwrap().iter().find(|v| v.account.id == id).unwrap().state, AccountState::Problem);
+        assert!(!f.has_opening());
     }
 
     #[test]

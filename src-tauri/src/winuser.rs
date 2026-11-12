@@ -116,19 +116,60 @@ fn expand_env(s: &str) -> String {
     out
 }
 
-/// Elevated: deletes the account, its profile folder (never following junctions) and its ProfileList entry.
-pub fn delete_with_profile(name: &str) -> AppResult<()> {
-    let sid = sid_of(name);
-    let profile = profile_path(name);
-    delete(name)?;
-    if let Some(p) = profile {
-        crate::share::remove_profile_safely(&p)?;
+/// Every (SID, profile folder) pair in the registry's ProfileList.
+pub fn profile_list() -> Vec<(String, std::path::PathBuf)> {
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    let Ok(list) = hklm.open_subkey(PROFILE_LIST) else { return vec![] };
+    list.enum_keys()
+        .flatten()
+        .filter_map(|sid| {
+            let raw: String = list.open_subkey(&sid).ok()?.get_value("ProfileImagePath").ok()?;
+            Some((sid, std::path::PathBuf::from(expand_env(&raw))))
+        })
+        .collect()
+}
+
+/// Profiles whose folder is `<name>` or Windows' collision form `<name>.<something>`.
+pub fn profiles_named(name: &str, entries: &[(String, std::path::PathBuf)]) -> Vec<(String, std::path::PathBuf)> {
+    let n = name.to_lowercase();
+    entries
+        .iter()
+        .filter(|(_, p)| {
+            let f = p.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
+            f == n || f.strip_prefix(&n).map(|rest| rest.starts_with('.')).unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Profile files can stay locked for a moment after the user's processes end (hive unload).
+fn remove_profile_with_retry(p: &std::path::Path) -> AppResult<()> {
+    let mut last = Ok(());
+    for _ in 0..10 {
+        last = crate::share::remove_profile_safely(p);
+        if last.is_ok() {
+            return last;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1500));
     }
-    if let Some(sid) = sid {
-        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    last
+}
+
+/// Elevated: deletes the account's profile folder (never following junctions), its ProfileList entry,
+/// then the account. The profile goes first so a failure leaves the account in place to retry from;
+/// a retry after the account is gone still finds the profile by its folder name.
+pub fn delete_with_profile(name: &str) -> AppResult<()> {
+    let targets: Vec<(String, std::path::PathBuf)> = match (sid_of(name), profile_path(name)) {
+        (Some(sid), Some(p)) => vec![(sid, p)],
+        (Some(_), None) => vec![], // never logged on: no profile yet
+        (None, _) => profiles_named(name, &profile_list()),
+    };
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    for (sid, path) in &targets {
+        remove_profile_with_retry(path)?;
         let _ = hklm.delete_subkey_all(format!(r"{PROFILE_LIST}\{sid}"));
     }
-    Ok(())
+    delete(name)
 }
 
 /// Works without admin.
@@ -165,5 +206,25 @@ mod tests {
     fn unknown_user_has_no_sid_or_profile() {
         assert!(sid_of("claude-nope-zz9").is_none());
         assert!(profile_path("claude-nope-zz9").is_none());
+    }
+
+    #[test]
+    fn finds_profiles_left_by_a_deleted_user() {
+        use std::path::PathBuf;
+        let entries = vec![
+            ("S-1-5-21-1-1001".to_string(), PathBuf::from(r"C:\Users\Irsal")),
+            ("S-1-5-21-1-1002".to_string(), PathBuf::from(r"C:\Users\claude-kantor")),
+            ("S-1-5-21-1-1003".to_string(), PathBuf::from(r"C:\Users\CLAUDE-KANTOR.MSI")),
+            ("S-1-5-21-1-1004".to_string(), PathBuf::from(r"C:\Users\claude-kantor-2")),
+        ];
+        let found = profiles_named("claude-kantor", &entries);
+        let got: Vec<&str> = found.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(got, vec!["S-1-5-21-1-1002", "S-1-5-21-1-1003"]);
+    }
+
+    #[test]
+    fn profile_list_includes_current_user() {
+        let me = std::env::var("USERPROFILE").unwrap().to_lowercase();
+        assert!(profile_list().iter().any(|(_, p)| p.to_string_lossy().to_lowercase() == me));
     }
 }
