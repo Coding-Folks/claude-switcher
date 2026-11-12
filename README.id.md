@@ -47,7 +47,7 @@ dan memory tetap dipakai bersama.
 ## Instalasi
 
 1. Pasang **Claude Desktop** untuk Windows dari [claude.ai/download](https://claude.ai/download).
-2. Unduh `Claude Switcher_x.y.z_x64-setup.exe` dari
+2. Unduh installer `…_x64-setup.exe` dari
    [rilis terbaru](https://github.com/Coding-Folks/claude-switcher/releases/latest), lalu jalankan.
    Aplikasi terpasang untuk semua user di `Program Files` (satu kali persetujuan admin).
 3. Buka **Claude Switcher** dari Start Menu. Ikonnya muncul di tray.

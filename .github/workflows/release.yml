@@ -22,17 +22,19 @@ jobs:
       - name: Build installer
         working-directory: src-tauri
         run: cargo tauri build
-      - name: Checksums
+      - name: Rename (no spaces) and checksum
         shell: pwsh
         run: |
-          $files = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe
-          $files | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name } |
-            Set-Content -Encoding ascii src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+          $dir = "src-tauri/target/release/bundle/nsis"
+          $out = New-Item -ItemType Directory -Force dist
+          Get-ChildItem "$dir/*-setup.exe" | ForEach-Object { Copy-Item $_ (Join-Path $out ($_.Name -replace ' ', '-')) }
+          Get-ChildItem "$out/*-setup.exe" | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content -Encoding ascii "$out/SHA256SUMS.txt"
       - name: Draft release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
           files: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+            dist/*-setup.exe
+            dist/SHA256SUMS.txt

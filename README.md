@@ -53,7 +53,7 @@ account open at once, each in its own window, while your skills, plugins and mem
 ## Install
 
 1. Install **Claude Desktop** for Windows from [claude.ai/download](https://claude.ai/download).
-2. Download `Claude Switcher_x.y.z_x64-setup.exe` from the
+2. Download the `…_x64-setup.exe` installer from the
    [latest release](https://github.com/Coding-Folks/claude-switcher/releases/latest) and run it.
    It installs for all users into `Program Files` (one admin prompt).
 3. Start **Claude Switcher** from the Start menu. Its icon appears in the tray.
