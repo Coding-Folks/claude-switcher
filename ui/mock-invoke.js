@@ -43,6 +43,11 @@
     async close_account({ id }) { const a = find(id); a.state = "Stopped"; a.bytes = null; emit("status", null); },
     async rename_account({ id, label }) { find(id).account.label = label; },
     async repair_account({ id }) { find(id).state = "Stopped"; return { fixed: ["password"] }; },
+    async import_history({ id }) {
+      find(id);
+      if (params.get("fail") === "import") throw { code: "NotFound", message_id: "err.import_no_signin", detail: null };
+      await wait(60);
+    },
     async remove_account({ id }) { accounts.splice(accounts.indexOf(find(id)), 1); },
     async add_account({ label }) {
       for (const step of ["vault", "create_user", "grant", "bootstrap", "launch"]) {

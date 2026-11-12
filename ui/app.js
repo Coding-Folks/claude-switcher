@@ -148,6 +148,12 @@
           await invoke("rename_account", { id: a.account.id, label: value.trim() });
           announce(t("renamed", { label: value.trim() }));
         }
+      } else if (action === "import") {
+        const ok = await confirmDialog({ title: t("import_title", { label }), body: t("import_body"), ok: t("import_confirm") });
+        if (ok) {
+          await invoke("import_history", { id: a.account.id });
+          announce(t("imported", { label }));
+        }
       } else if (action === "repair") {
         await invoke("repair_account", { id: a.account.id });
         announce(t("repaired", { label }));
@@ -178,7 +184,7 @@
     const items = [];
     if (a.state === "Running") items.push(["close", t("menu_close")]);
     items.push(["rename", t("menu_rename")], ["repair", t("menu_repair")]);
-    if (a.account.kind !== "main") items.push(["remove", t("menu_remove")]);
+    if (a.account.kind !== "main") items.push(["import", t("menu_import")], ["remove", t("menu_remove")]);
     menu.replaceChildren(...items.map(([action, text]) => {
       const b = document.createElement("button");
       b.type = "button"; b.setAttribute("role", "menuitem"); b.tabIndex = -1; b.textContent = text;

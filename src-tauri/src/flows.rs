@@ -291,6 +291,27 @@ impl<P: Platform> Flows<P> {
         Ok(())
     }
 
+    /// Copies this Claude account's Code session list from the main user's data into the hidden user's.
+    /// Claude must not be running as that user while its files are written, so it is closed first.
+    pub fn import_history(&self, id: &str) -> AppResult<()> {
+        let a = self.find(id)?;
+        if a.kind == AccountKind::Main {
+            return Err(invalid("the main account already has its own history"));
+        }
+        let user = Self::user(&a)?.to_string();
+        if let Some((pid, _)) = self.running_root(&a, &self.p.snapshot()) {
+            self.p.close(pid, Some(&user))?;
+            for _ in 0..20 {
+                if self.running_root(&a, &self.p.snapshot()).is_none() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+        self.opening.lock().unwrap().remove(id);
+        self.p.elevated(ElevatedOp::ImportSessions { name: user }, None)
+    }
+
     /// Re-runs the bootstrap (which also proves the logon works); on a refused logon, sets a new password first.
     pub fn repair(&self, id: &str) -> AppResult<RepairReport> {
         let a = self.find(id)?;
@@ -391,12 +412,12 @@ mod tests {
             self.log(format!("vault_delete {user}")); self.vault.lock().unwrap().remove(user); Ok(())
         }
         fn elevated(&self, op: ElevatedOp, _s: Option<&Zeroizing<String>>) -> AppResult<()> {
-            let step = match &op { ElevatedOp::CreateUser { .. } => "create_user", ElevatedOp::SetPassword { .. } => "set_password", ElevatedOp::DeleteUser { .. } => "delete_user" };
+            let step = match &op { ElevatedOp::CreateUser { .. } => "create_user", ElevatedOp::SetPassword { .. } => "set_password", ElevatedOp::DeleteUser { .. } => "delete_user", ElevatedOp::ImportSessions { .. } => "import_sessions" };
             self.check(step)?;
             match &op {
                 ElevatedOp::CreateUser { name } => { self.users.lock().unwrap().insert(name.clone()); }
                 ElevatedOp::DeleteUser { name } => { self.users.lock().unwrap().remove(name); }
-                ElevatedOp::SetPassword { .. } => {}
+                ElevatedOp::SetPassword { .. } | ElevatedOp::ImportSessions { .. } => {}
             }
             self.log(format!("{step} {}", serde_json::to_value(&op).unwrap()["name"].as_str().unwrap()));
             Ok(())
@@ -630,6 +651,31 @@ mod tests {
         assert!(f.has_opening());
         assert_eq!(f.list().unwrap().iter().find(|v| v.account.id == id).unwrap().state, AccountState::Problem);
         assert!(!f.has_opening());
+    }
+
+    #[test]
+    fn import_closes_a_running_account_first() {
+        let (f, _) = flows();
+        let id = add_existing(&f, "Kantor", "claude-kantor");
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-claude-kantor".into(), root_pid: 9, bytes: GB });
+        f.import_history(&id).unwrap();
+        assert_eq!(f.p.calls(), vec!["close 9 claude-kantor", "import_sessions claude-kantor"]);
+    }
+
+    #[test]
+    fn import_of_a_stopped_account_goes_straight_to_the_admin_step() {
+        let (f, _) = flows();
+        let id = add_existing(&f, "Kantor", "claude-kantor");
+        f.import_history(&id).unwrap();
+        assert_eq!(f.p.calls(), vec!["import_sessions claude-kantor"]);
+    }
+
+    #[test]
+    fn import_into_main_is_rejected() {
+        let (f, _) = flows();
+        let id = main_id(&f);
+        assert_eq!(f.import_history(&id).unwrap_err().code, ErrorCode::Invalid);
+        assert!(f.p.calls().is_empty());
     }
 
     #[test]

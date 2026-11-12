@@ -23,6 +23,11 @@ window.STRINGS = {
   menu_rename: "Ganti nama",
   menu_repair: "Perbaiki",
   menu_remove: "Hapus",
+  menu_import: "Impor riwayat",
+  import_title: "Impor riwayat ke {label}?",
+  import_body: "Claude di akun ini akan ditutup, lalu daftar sesi Code dari profil utama untuk akun Claude yang sama disalin. Sesi yang sudah ada tidak ditimpa. Windows akan meminta persetujuan admin sekali.",
+  import_confirm: "Impor",
+  imported: "Riwayat diimpor ke {label}. Buka lagi akunnya untuk melihatnya.",
 
   add_account: "Tambah akun",
   add_label: "Nama akun",
@@ -63,6 +68,7 @@ window.STRINGS = {
   "err.low_memory": "RAM tidak cukup untuk membuka akun lagi.",
   "err.store_corrupt": "Daftar akun rusak dan sudah dicadangkan ke {detail}. Daftar dimulai ulang; user Windows akun lama masih ada.",
   "err.not_found": "Akun tidak ditemukan.",
+  "err.import_no_signin": "Login dulu ke Claude di akun ini, lalu impor riwayat lagi.",
   "err.open_timeout": "Claude tidak terbuka dalam 30 detik.",
   "err.generic": "Terjadi kesalahan: {detail}",
 };

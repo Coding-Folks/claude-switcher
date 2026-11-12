@@ -106,6 +106,13 @@ pub async fn remove_account(app: AppHandle, state: State<'_, AppState>, id: Stri
 }
 
 #[tauri::command]
+pub async fn import_history(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let f = state.flows()?;
+    crate::applog::info("import history", &[("id", &id)]);
+    blocking(&app, &state.busy, move || f.import_history(&id)).await
+}
+
+#[tauri::command]
 pub async fn repair_account(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<RepairReport> {
     let f = state.flows()?;
     blocking(&app, &state.busy, move || f.repair(&id)).await

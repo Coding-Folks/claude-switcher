@@ -67,6 +67,26 @@ test('escape closes menu then returns focus to its button', async ({ page }) => 
   await expect(kebab).toHaveAttribute('aria-expanded', 'false');
 });
 
+test('import history asks first, then announces', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Kantor').getByRole('button', { name: 'Opsi untuk Kantor' }).click();
+  await page.getByRole('menuitem', { name: 'Impor riwayat' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Impor riwayat ke Kantor?');
+  await expect(dialog).toContainText('ditutup');
+  await expect(dialog.getByRole('button', { name: 'Batal' })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Impor' }).click();
+  await expect(page.locator('#live')).toHaveText('Riwayat diimpor ke Kantor. Buka lagi akunnya untuk melihatnya.');
+});
+
+test('import before signing in explains what to do', async ({ page }) => {
+  await ready(page, '&fail=import');
+  await row(page, 'Klien').getByRole('button', { name: 'Opsi untuk Klien' }).click();
+  await page.getByRole('menuitem', { name: 'Impor riwayat' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Impor' }).click();
+  await expect(page.locator('#alert')).toHaveText('Login dulu ke Claude di akun ini, lalu impor riwayat lagi.');
+});
+
 test('main account has no remove option', async ({ page }) => {
   await ready(page);
   await row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' }).click();

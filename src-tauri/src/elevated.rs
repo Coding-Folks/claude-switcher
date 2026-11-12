@@ -13,12 +13,14 @@ pub enum ElevatedOp {
     CreateUser { name: String },
     SetPassword { name: String },
     DeleteUser { name: String },
+    /// Copies the main user's Code session list into the hidden user's Claude data (history.rs).
+    ImportSessions { name: String },
 }
 
 impl ElevatedOp {
     fn name(&self) -> &str {
         match self {
-            Self::CreateUser { name } | Self::SetPassword { name } | Self::DeleteUser { name } => name,
+            Self::CreateUser { name } | Self::SetPassword { name } | Self::DeleteUser { name } | Self::ImportSessions { name } => name,
         }
     }
 }
@@ -28,6 +30,47 @@ struct ElevatedResult {
     ok: bool,
     win32: Option<u32>,
     detail: Option<String>,
+    #[serde(default)]
+    message_id: Option<String>,
+}
+
+/// UI messages that may come back from the admin process (AppError keeps &'static str ids).
+const PASSED_MESSAGES: &[(&str, ErrorCode)] = &[("err.import_no_signin", ErrorCode::NotFound)];
+
+fn from_result(r: ElevatedResult) -> AppResult<()> {
+    if r.ok {
+        return Ok(());
+    }
+    if let Some((id, code)) = r.message_id.as_deref().and_then(|m| PASSED_MESSAGES.iter().find(|(id, _)| *id == m)) {
+        return Err(AppError::new(*code, id));
+    }
+    Err(match r.win32 {
+        Some(c) => AppError::win32(c, r.detail.as_deref().unwrap_or("elevated")),
+        None => AppError::io(r.detail.unwrap_or_default()),
+    })
+}
+
+/// Elevated: copy the session list of every Claude account the hidden user signed in to.
+fn import_sessions(name: &str) -> AppResult<()> {
+    let no_signin = || AppError::new(ErrorCode::NotFound, "err.import_no_signin");
+    let profile = crate::winuser::profile_path(name).ok_or_else(no_signin)?;
+    let dests: Vec<PathBuf> = crate::history::sessions_dirs(&profile.join(r"AppData\Local"))
+        .into_iter()
+        .filter(|d| std::fs::read_dir(d).map(|mut r| r.next().is_some()).unwrap_or(false))
+        .collect();
+    if dests.is_empty() {
+        return Err(no_signin());
+    }
+    let main_local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).ok_or_else(|| AppError::io("LOCALAPPDATA not set"))?;
+    let sources = crate::history::sessions_dirs(&main_local);
+    for dest in &dests {
+        crate::history::copy_plan(&crate::history::import_plan(&sources, dest))?;
+        // Copied by the admin token: hand the files to the hidden user.
+        let system = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        let _ = std::process::Command::new(system.join(r"System32\icacls.exe"))
+            .arg(dest).args(["/setowner", name, "/T", "/C", "/Q"]).output();
+    }
+    Ok(())
 }
 
 fn invalid(why: &str) -> AppError {
@@ -98,6 +141,7 @@ pub fn run_elevated(op: &ElevatedOp, secret: Option<&Path>) -> AppResult<()> {
         }
         ElevatedOp::SetPassword { name } => crate::winuser::set_password(name, &read_secret(secret)?),
         ElevatedOp::DeleteUser { name } => crate::winuser::delete_with_profile(name),
+        ElevatedOp::ImportSessions { name } => import_sessions(name),
     }
 }
 
@@ -113,11 +157,12 @@ pub fn main_elevated(args: &[String]) -> i32 {
         r
     };
     let report = match &outcome {
-        Ok(()) => ElevatedResult { ok: true, win32: None, detail: None },
+        Ok(()) => ElevatedResult { ok: true, win32: None, detail: None, message_id: None },
         Err(e) => ElevatedResult {
             ok: false,
             win32: if let ErrorCode::Win32(c) = e.code { Some(c) } else { None },
             detail: e.detail.clone(),
+            message_id: Some(e.message_id.to_string()),
         },
     };
     // create_new: never follow or overwrite something already at that name.
@@ -244,11 +289,7 @@ pub fn request(op: ElevatedOp, secret: Option<&Zeroizing<String>>) -> AppResult<
     let report: Option<ElevatedResult> = std::fs::read(&result).ok().and_then(|b| serde_json::from_slice(&b).ok());
     cleanup();
     match report {
-        Some(r) if r.ok => Ok(()),
-        Some(r) => Err(match r.win32 {
-            Some(c) => AppError::win32(c, r.detail.as_deref().unwrap_or("elevated")),
-            None => AppError::io(r.detail.unwrap_or_default()),
-        }),
+        Some(r) => from_result(r),
         None => Err(AppError::io("elevated process returned no result")),
     }
 }
@@ -271,6 +312,18 @@ mod tests {
     fn rejects_bad_name() {
         assert!(parse_args(&args(r#"{"op":"delete_user","name":"Administrator"}"#)).is_err());
         assert!(parse_args(&args(r#"{"op":"create_user","name":"claude-../x"}"#)).is_err());
+    }
+    #[test]
+    fn accepts_import_sessions_for_valid_names_only() {
+        let (op, _, _) = parse_args(&args(r#"{"op":"import_sessions","name":"claude-kantor"}"#)).unwrap();
+        assert_eq!(op, ElevatedOp::ImportSessions { name: "claude-kantor".into() });
+        assert!(parse_args(&args(r#"{"op":"import_sessions","name":"Irsal"}"#)).is_err());
+    }
+    #[test]
+    fn known_message_ids_survive_the_elevated_boundary() {
+        let e = from_result(ElevatedResult { ok: false, win32: None, detail: None, message_id: Some("err.import_no_signin".into()) }).unwrap_err();
+        assert_eq!((e.code, e.message_id), (ErrorCode::NotFound, "err.import_no_signin"));
+        assert!(from_result(ElevatedResult { ok: true, win32: None, detail: None, message_id: None }).is_ok());
     }
     #[test]
     fn rejects_unknown_op() {

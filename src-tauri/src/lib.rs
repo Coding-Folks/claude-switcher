@@ -11,6 +11,7 @@ pub mod monitor;
 pub mod platform;
 pub mod flows;
 pub mod applog;
+pub mod history;
 pub mod commands;
 pub mod tray;
 
@@ -47,6 +48,7 @@ pub fn run() {
             commands::rename_account,
             commands::remove_account,
             commands::repair_account,
+            commands::import_history,
             commands::get_settings,
             commands::set_autostart,
             commands::hide_panel,
