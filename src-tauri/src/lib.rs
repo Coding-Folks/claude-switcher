@@ -1,6 +1,7 @@
 pub mod error;
 pub mod naming;
 pub mod store;
+pub mod vault;
 
 pub fn run() {
     tauri::Builder::default()
