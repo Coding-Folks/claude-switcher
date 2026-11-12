@@ -2,7 +2,7 @@
 //! then tells the UI and the tray to refresh.
 
 use crate::error::{AppError, AppResult, ErrorCode};
-use crate::flows::{AccountView, Flows, OpenOutcome, RepairReport};
+use crate::flows::{AccountView, AddMode, Flows, OpenOutcome, RepairReport};
 use crate::platform::{Platform, WinPlatform};
 use crate::store::Account;
 use serde::Serialize;
@@ -67,13 +67,13 @@ pub async fn list_accounts(state: State<'_, AppState>) -> AppResult<Vec<AccountV
 }
 
 #[tauri::command]
-pub async fn add_account(app: AppHandle, state: State<'_, AppState>, label: String) -> AppResult<Account> {
+pub async fn add_account(app: AppHandle, state: State<'_, AppState>, label: String, mode: AddMode) -> AppResult<Account> {
     let f = state.flows()?;
     let emitter = app.clone();
     let shown = label.clone();
     crate::applog::info("add account", &[("label", &label)]);
     blocking(&app, &state.busy, move || {
-        f.add(&label, &|step| {
+        f.add(&label, mode, &|step| {
             let _ = emitter.emit("progress", Progress { step: step.into(), account_label: shown.clone() });
         })
     })

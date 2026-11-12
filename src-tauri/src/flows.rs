@@ -5,8 +5,9 @@ use crate::elevated::ElevatedOp;
 use crate::error::{AppError, AppResult, ErrorCode};
 pub use crate::platform::Platform;
 use crate::store::{Account, AccountKind, LoadOutcome, Store};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -26,7 +27,21 @@ pub enum OpenOutcome {
     Focused,
     Launched,
     NeedsLowRamConfirm,
+    /// A same-user slot's folder was missing; it was created again and Claude started (needs a new login).
+    SlotRecreated,
 }
+
+/// Where "Tambah akun" runs the new account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AddMode {
+    /// This Windows user, own LOCALAPPDATA slot: no UAC.
+    SameUser,
+    /// A hidden Windows user of its own: full isolation, one UAC prompt.
+    WindowsUser,
+}
+
+const HEALTHY_MOVE_LABEL: &str = "already_moved";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AccountView {
@@ -100,30 +115,79 @@ impl<P: Platform> Flows<P> {
 
     fn sid(&self, a: &Account) -> Option<String> {
         match (&a.kind, &a.windows_user) {
-            (AccountKind::Main, _) => self.p.main_sid(),
+            (AccountKind::Main | AccountKind::SameUser, _) => self.p.main_sid(),
             (AccountKind::WindowsUser, Some(u)) => self.p.sid_of(u),
             _ => None,
         }
     }
 
-    fn running_root(&self, a: &Account, snap: &crate::monitor::Snapshot) -> Option<(u32, u64)> {
+    /// The Claude data folders of every same-user slot (all share the main user's SID).
+    fn slot_dirs(&self, accounts: &[Account]) -> Vec<PathBuf> {
+        accounts.iter().filter_map(|a| a.data_root.as_deref()).map(|r| self.p.slot_data_dir(r)).collect()
+    }
+
+    /// The running instance of `a`: by SID for hidden users; for this user's accounts by data folder.
+    /// Main is the instance of the main SID that no slot claims (also when its folder is unreadable).
+    fn running_in(&self, a: &Account, snap: &crate::monitor::Snapshot, slot_dirs: &[PathBuf]) -> Option<(u32, u64)> {
         let sid = self.sid(a)?;
-        snap.instances.iter().find(|i| i.owner_sid == sid).map(|i| (i.root_pid, i.bytes))
+        let mine = snap.instances.iter().filter(|i| i.owner_sid == sid);
+        let found = match a.kind {
+            AccountKind::WindowsUser => mine.into_iter().next(),
+            AccountKind::SameUser => {
+                let want = self.p.slot_data_dir(a.data_root.as_deref()?);
+                mine.into_iter().find(|i| i.data_dir.as_deref().map(|d| crate::monitor::same_dir(d, &want)).unwrap_or(false))
+            }
+            AccountKind::Main => mine.into_iter().find(|i| {
+                !i.data_dir.as_deref().map(|d| slot_dirs.iter().any(|s| crate::monitor::same_dir(d, s))).unwrap_or(false)
+            }),
+        };
+        found.map(|i| (i.root_pid, i.bytes))
+    }
+
+    fn running_root(&self, a: &Account, snap: &crate::monitor::Snapshot) -> Option<(u32, u64)> {
+        let slots = self.slot_dirs(&self.accounts().unwrap_or_default());
+        self.running_in(a, snap, &slots)
     }
 
     fn user(a: &Account) -> AppResult<&str> {
         a.windows_user.as_deref().ok_or_else(|| invalid("account has no windows user"))
     }
 
+    fn data_root(a: &Account) -> AppResult<&Path> {
+        a.data_root.as_deref().ok_or_else(|| invalid("account has no slot folder"))
+    }
+
+    /// Closes `a` if it runs and waits (up to 10 s) until it is gone, so its files can be written.
+    fn close_and_wait(&self, a: &Account) -> AppResult<()> {
+        if let Some((pid, _)) = self.running_root(a, &self.p.snapshot()) {
+            self.p.close(pid, a.windows_user.as_deref())?;
+            for _ in 0..20 {
+                if self.running_root(a, &self.p.snapshot()).is_none() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+        Ok(())
+    }
+
     pub fn list(&self) -> AppResult<Vec<AccountView>> {
         let snap = self.p.snapshot();
+        let accounts = self.accounts()?;
+        let slots = self.slot_dirs(&accounts);
         let mut opening = self.opening.lock().unwrap();
         let mut problems = self.problems.lock().unwrap();
-        Ok(self
-            .accounts()?
+        Ok(accounts
             .into_iter()
             .map(|a| {
-                let run = self.running_root(&a, &snap);
+                let run = self.running_in(&a, &snap, &slots);
+                // A slot Claude did not take as is (an update changed its data-folder logic) is a problem.
+                if run.is_some() && a.kind == AccountKind::SameUser {
+                    let label = a.data_root.as_deref().and_then(|r| self.p.slot_move_label(r));
+                    if label.map(|l| !l.starts_with(HEALTHY_MOVE_LABEL)).unwrap_or(false) {
+                        problems.insert(a.id.clone());
+                    }
+                }
                 if run.is_some() {
                     opening.remove(&a.id);
                 } else if opening.get(&a.id).map(|t| t.elapsed() >= OPEN_TIMEOUT).unwrap_or(false) {
@@ -131,7 +195,9 @@ impl<P: Platform> Flows<P> {
                     opening.remove(&a.id);
                     problems.insert(a.id.clone());
                 }
-                let state = if run.is_some() {
+                let state = if problems.contains(&a.id) && run.is_some() && a.kind == AccountKind::SameUser {
+                    AccountState::Problem
+                } else if run.is_some() {
                     AccountState::Running
                 } else if problems.contains(&a.id) {
                     AccountState::Problem
@@ -145,10 +211,13 @@ impl<P: Platform> Flows<P> {
             .collect())
     }
 
-    pub fn add(&self, label: &str, progress: &dyn Fn(&str)) -> AppResult<Account> {
+    pub fn add(&self, label: &str, mode: AddMode, progress: &dyn Fn(&str)) -> AppResult<Account> {
         let label = label.trim();
         if label.is_empty() {
             return Err(invalid("empty label"));
+        }
+        if mode == AddMode::SameUser {
+            return self.add_slot(label, progress);
         }
         let existing = self.accounts()?;
         let taken = |n: &str| self.p.user_exists(n) || existing.iter().any(|a| a.windows_user.as_deref() == Some(n));
@@ -212,6 +281,43 @@ impl<P: Platform> Flows<P> {
         Ok(account)
     }
 
+    /// Same-user account: a slot folder (named by the account id), saved, then launched. No UAC, no vault.
+    fn add_slot(&self, label: &str, progress: &dyn Fn(&str)) -> AppResult<Account> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let root = crate::slot::root_for(&self.p.slots_dir(), &id);
+        progress("prepare_slot");
+        self.p.slot_prepare(&root)?;
+        let account = Account {
+            id,
+            label: label.to_string(),
+            kind: AccountKind::SameUser,
+            windows_user: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            data_root: Some(root.clone()),
+        };
+        let saved = {
+            let _w = self.write.lock().unwrap();
+            self.accounts().and_then(|mut list| {
+                list.push(account.clone());
+                self.store.save(&list)
+            })
+        };
+        if let Err(e) = saved {
+            let _ = self.p.slot_remove(&root); // nothing recorded, so leave no folder behind
+            return Err(e);
+        }
+        progress("launch");
+        match self.p.launch_slot(&root) {
+            Ok(()) => {
+                self.opening.lock().unwrap().insert(account.id.clone(), Instant::now());
+            }
+            Err(_) => {
+                self.problems.lock().unwrap().insert(account.id.clone());
+            }
+        }
+        Ok(account)
+    }
+
     pub fn open(&self, id: &str, confirmed_low_ram: bool) -> AppResult<OpenOutcome> {
         let a = self.find(id)?;
         let snap = self.p.snapshot();
@@ -219,9 +325,17 @@ impl<P: Platform> Flows<P> {
         if !running && snap.free_ram < LOW_RAM && !confirmed_low_ram {
             return Ok(OpenOutcome::NeedsLowRamConfirm);
         }
+        let mut recreated = false;
         let result = match a.kind {
             AccountKind::Main => self.p.launch_main(),
-            AccountKind::SameUser => todo!("same-user open: Task 4"),
+            AccountKind::SameUser => {
+                let root = Self::data_root(&a)?;
+                if !running && !self.p.slot_ready(root) {
+                    self.p.slot_prepare(root)?; // folder deleted outside the app: make it again
+                    recreated = true;
+                }
+                self.p.launch_slot(root)
+            }
             AccountKind::WindowsUser => {
                 let user = Self::user(&a)?;
                 let pw = self.p.vault_get(user)?;
@@ -245,7 +359,7 @@ impl<P: Platform> Flows<P> {
             return Ok(OpenOutcome::Focused);
         }
         self.opening.lock().unwrap().insert(a.id.clone(), Instant::now());
-        Ok(OpenOutcome::Launched)
+        Ok(if recreated { OpenOutcome::SlotRecreated } else { OpenOutcome::Launched })
     }
 
     pub fn close(&self, id: &str) -> AppResult<()> {
@@ -274,6 +388,17 @@ impl<P: Platform> Flows<P> {
         if a.kind == AccountKind::Main {
             return Err(invalid("the main account cannot be removed"));
         }
+        if a.kind == AccountKind::SameUser {
+            let root = Self::data_root(&a)?.to_path_buf();
+            self.close_and_wait(&a)?;
+            self.p.slot_remove(&root)?;
+            let _w = self.write.lock().unwrap();
+            let list: Vec<Account> = self.accounts()?.into_iter().filter(|x| x.id != id).collect();
+            self.store.save(&list)?;
+            self.problems.lock().unwrap().remove(id);
+            self.opening.lock().unwrap().remove(id);
+            return Ok(());
+        }
         let user = Self::user(&a)?.to_string();
         if let Some((pid, _)) = self.running_root(&a, &self.p.snapshot()) {
             self.p.close(pid, Some(&user))?;
@@ -300,17 +425,12 @@ impl<P: Platform> Flows<P> {
         if a.kind == AccountKind::Main {
             return Err(invalid("the main account already has its own history"));
         }
-        let user = Self::user(&a)?.to_string();
-        if let Some((pid, _)) = self.running_root(&a, &self.p.snapshot()) {
-            self.p.close(pid, Some(&user))?;
-            for _ in 0..20 {
-                if self.running_root(&a, &self.p.snapshot()).is_none() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(500));
-            }
-        }
+        self.close_and_wait(&a)?;
         self.opening.lock().unwrap().remove(id);
+        if a.kind == AccountKind::SameUser {
+            return self.p.slot_import(Self::data_root(&a)?).map(|_| ()); // own files: no admin needed
+        }
+        let user = Self::user(&a)?.to_string();
         self.p.elevated(ElevatedOp::ImportSessions { name: user }, None)
     }
 
@@ -319,6 +439,11 @@ impl<P: Platform> Flows<P> {
         let a = self.find(id)?;
         let mut report = RepairReport::default();
         if a.kind == AccountKind::Main {
+            self.problems.lock().unwrap().remove(id);
+            return Ok(report);
+        }
+        if a.kind == AccountKind::SameUser {
+            self.p.slot_prepare(Self::data_root(&a)?)?; // recreates the data folder and the WindowsApps junction
             self.problems.lock().unwrap().remove(id);
             return Ok(report);
         }
@@ -480,11 +605,166 @@ mod tests {
     }
     fn err(code: ErrorCode) -> AppError { AppError::new(code, "x") }
 
+    /// A same-user account saved directly (no flow calls); returns (id, data_root as shown in calls).
+    fn add_slot(f: &Flows<Fake>, label: &str) -> (String, String) {
+        let id = format!("slot-{label}");
+        let root = PathBuf::from(format!(r"C:\slots\{id}\Local"));
+        let mut list = f.accounts().unwrap();
+        list.push(Account { id: id.clone(), label: label.into(), kind: AccountKind::SameUser, windows_user: None, created_at: "x".into(), data_root: Some(root.clone()) });
+        f.store.save(&list).unwrap();
+        (id, root.display().to_string())
+    }
+    fn slot_instance(root: &str, pid: u32, gb: u64) -> InstanceStatus {
+        InstanceStatus { owner_sid: "SID-main".into(), root_pid: pid, bytes: gb * GB, data_dir: Some(PathBuf::from(format!(r"{root}\Claude-Data\claude_p"))) }
+    }
+    fn state_of(f: &Flows<Fake>, id: &str) -> (AccountState, Option<u64>) {
+        let v = f.list().unwrap().into_iter().find(|v| v.account.id == id).unwrap();
+        (v.state, v.bytes)
+    }
+
+    #[test]
+    fn add_same_user_prepares_saves_launches_without_uac() {
+        let (f, _) = flows();
+        let steps = Mutex::new(vec![]);
+        let a = f.add("Slot A", AddMode::SameUser, &|s| steps.lock().unwrap().push(s.to_string())).unwrap();
+        let root = format!(r"C:\slots\{}\Local", a.id);
+        assert_eq!(f.p.calls(), vec![format!("slot_prepare {root}"), format!("launch_slot {root}")]);
+        assert_eq!(*steps.lock().unwrap(), vec!["prepare_slot", "launch"]);
+        assert_eq!((a.kind, a.windows_user.clone(), a.data_root.clone()), (AccountKind::SameUser, None, Some(PathBuf::from(&root))));
+        assert!(f.accounts().unwrap().iter().any(|x| x.id == a.id));
+    }
+
+    #[test]
+    fn add_same_user_prepare_failure_saves_nothing() {
+        let (f, _) = flows();
+        f.p.fail.lock().unwrap().insert("slot_prepare", AppError::new(ErrorCode::Io, "err.slot_prepare"));
+        assert_eq!(f.add("Slot A", AddMode::SameUser, &|_| {}).unwrap_err().message_id, "err.slot_prepare");
+        assert_eq!(f.accounts().unwrap().len(), 1);
+        assert!(!f.p.calls().iter().any(|c| c.starts_with("launch_slot")));
+    }
+
+    #[test]
+    fn add_same_user_rolls_back_folder_when_save_fails() {
+        let (f, path) = flows();
+        f.accounts().unwrap(); // first run writes accounts.json
+        std::fs::create_dir_all(path.with_file_name("accounts.json.tmp")).unwrap(); // the atomic write can no longer happen
+        assert!(f.add("Slot A", AddMode::SameUser, &|_| {}).is_err());
+        let calls = f.p.calls();
+        assert!(calls[0].starts_with("slot_prepare "), "{calls:?}");
+        assert!(calls.last().unwrap().starts_with("slot_remove "), "{calls:?}");
+        assert_eq!(calls[0].replace("slot_prepare", ""), calls.last().unwrap().replace("slot_remove", ""));
+    }
+
+    #[test]
+    fn open_same_user_launches_slot() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::Launched);
+        assert_eq!(f.p.calls(), vec![format!("launch_slot {root}")]);
+    }
+
+    #[test]
+    fn open_same_user_recreates_missing_slot() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.slot_missing.lock().unwrap().insert(root.clone());
+        assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::SlotRecreated);
+        assert_eq!(f.p.calls(), vec![format!("slot_prepare {root}"), format!("launch_slot {root}")]);
+    }
+
+    #[test]
+    fn open_running_slot_focuses() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        assert_eq!(f.open(&id, false).unwrap(), OpenOutcome::Focused);
+    }
+
+    #[test]
+    fn main_is_the_instance_no_slot_claims() {
+        let (f, _) = flows();
+        let (slot, root) = add_slot(&f, "A");
+        let main = main_id(&f);
+        {
+            let mut r = f.p.running.lock().unwrap();
+            r.push(slot_instance(&root, 2, 2)); // the slot, listed first on purpose
+            r.push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 1, bytes: 3 * GB, data_dir: Some(PathBuf::from(r"C:\Users\me\AppData\Local\Claude-Data\claude_p")) });
+        }
+        assert_eq!(state_of(&f, &main), (AccountState::Running, Some(3 * GB)));
+        assert_eq!(state_of(&f, &slot), (AccountState::Running, Some(2 * GB)));
+    }
+
+    #[test]
+    fn main_with_unreadable_data_dir_still_counts() {
+        let (f, _) = flows();
+        let (_, root) = add_slot(&f, "A");
+        let main = main_id(&f);
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 2));
+        f.p.running.lock().unwrap().push(InstanceStatus { owner_sid: "SID-main".into(), root_pid: 3, bytes: GB, data_dir: None });
+        assert_eq!(state_of(&f, &main), (AccountState::Running, Some(GB)));
+    }
+
+    #[test]
+    fn a_running_slot_alone_does_not_make_main_running() {
+        let (f, _) = flows();
+        let (_, root) = add_slot(&f, "A");
+        let main = main_id(&f);
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 2));
+        assert_eq!(state_of(&f, &main), (AccountState::Stopped, None));
+    }
+
+    #[test]
+    fn close_same_user_kills_its_root_as_main() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        f.close(&id).unwrap();
+        assert_eq!(f.p.calls(), vec!["close 2 main"]);
+    }
+
+    #[test]
+    fn remove_same_user_closes_then_deletes_folder() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        f.remove(&id).unwrap();
+        assert_eq!(f.p.calls(), vec!["close 2 main".to_string(), format!("slot_remove {root}")]);
+        assert!(f.accounts().unwrap().iter().all(|a| a.id != id));
+    }
+
+    #[test]
+    fn import_same_user_closes_then_copies_without_elevation() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        f.import_history(&id).unwrap();
+        assert_eq!(f.p.calls(), vec!["close 2 main".to_string(), format!("slot_import {root}")]);
+    }
+
+    #[test]
+    fn repair_same_user_reprepares_slot() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.problems.lock().unwrap().insert(id.clone());
+        f.repair(&id).unwrap();
+        assert_eq!(f.p.calls(), vec![format!("slot_prepare {root}")]);
+        assert_eq!(state_of(&f, &id).0, AccountState::Stopped);
+    }
+
+    #[test]
+    fn unexpected_move_label_marks_problem() {
+        let (f, _) = flows();
+        let (id, root) = add_slot(&f, "A");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 2, 1));
+        f.p.move_labels.lock().unwrap().insert(root, "stay_never_left".into());
+        assert_eq!(state_of(&f, &id).0, AccountState::Problem);
+    }
+
     #[test]
     fn add_happy_path_order() {
         let (f, _) = flows();
         let steps = Mutex::new(vec![]);
-        let a = f.add("Kantor", &|s| steps.lock().unwrap().push(s.to_string())).unwrap();
+        let a = f.add("Kantor", AddMode::WindowsUser, &|s| steps.lock().unwrap().push(s.to_string())).unwrap();
         assert_eq!(a.windows_user.as_deref(), Some("claude-kantor"));
         assert_eq!(f.p.calls(), vec!["vault_put claude-kantor", "create_user claude-kantor", "grant claude-kantor", "bootstrap claude-kantor", "launch_as claude-kantor"]);
         assert_eq!(*steps.lock().unwrap(), vec!["vault", "create_user", "grant", "bootstrap", "launch"]);
@@ -495,13 +775,13 @@ mod tests {
     fn add_picks_free_name_when_user_exists() {
         let (f, _) = flows();
         f.p.users.lock().unwrap().insert("claude-kantor".into());
-        assert_eq!(f.add("Kantor", &|_| {}).unwrap().windows_user.as_deref(), Some("claude-kantor-2"));
+        assert_eq!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).unwrap().windows_user.as_deref(), Some("claude-kantor-2"));
     }
 
     #[test]
     fn add_rejects_blank_label() {
         let (f, _) = flows();
-        assert_eq!(f.add("   ", &|_| {}).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(f.add("   ", AddMode::WindowsUser, &|_| {}).unwrap_err().code, ErrorCode::Invalid);
         assert!(f.p.calls().is_empty());
     }
 
@@ -509,7 +789,7 @@ mod tests {
     fn add_rolls_back_when_bootstrap_fails() {
         let (f, _) = flows();
         f.p.fail.lock().unwrap().insert("bootstrap", err(ErrorCode::Io));
-        assert!(f.add("Kantor", &|_| {}).is_err());
+        assert!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).is_err());
         assert_eq!(f.p.calls(), vec!["vault_put claude-kantor", "create_user claude-kantor", "grant claude-kantor", "revoke claude-kantor", "delete_user claude-kantor", "vault_delete claude-kantor"]);
         assert_eq!(f.accounts().unwrap().len(), 1);
     }
@@ -518,7 +798,7 @@ mod tests {
     fn add_rolls_back_when_bootstrap_reports_failure() {
         let (f, _) = flows();
         *f.p.report.lock().unwrap() = Some(BootstrapReport { registered: false, junction_ok: false, alias_present: false });
-        assert!(f.add("Kantor", &|_| {}).is_err());
+        assert!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).is_err());
         assert!(f.p.calls().contains(&"delete_user claude-kantor".to_string()));
         assert_eq!(f.accounts().unwrap().len(), 1);
     }
@@ -527,7 +807,7 @@ mod tests {
     fn add_uac_cancel_before_user_created() {
         let (f, _) = flows();
         f.p.fail.lock().unwrap().insert("create_user", err(ErrorCode::UacCancelled));
-        assert_eq!(f.add("Kantor", &|_| {}).unwrap_err().code, ErrorCode::UacCancelled);
+        assert_eq!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).unwrap_err().code, ErrorCode::UacCancelled);
         assert_eq!(f.p.calls(), vec!["vault_put claude-kantor", "vault_delete claude-kantor"]);
     }
 
