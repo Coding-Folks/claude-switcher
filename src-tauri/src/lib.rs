@@ -5,6 +5,8 @@ pub mod vault;
 pub mod elevated;
 pub mod winuser;
 pub mod share;
+pub mod claude_pkg;
+pub mod launcher;
 
 pub fn run() {
     tauri::Builder::default()
