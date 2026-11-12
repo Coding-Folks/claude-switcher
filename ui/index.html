@@ -34,6 +34,19 @@
         <label for="add-label" data-s="add_label"></label>
         <input id="add-label" name="label" type="text" maxlength="40" autocomplete="off" aria-describedby="add-hint add-error">
         <p class="hint" id="add-hint" data-s="add_hint"></p>
+        <fieldset class="modes">
+          <legend data-s="mode_legend"></legend>
+          <label class="mode">
+            <input type="radio" name="mode" value="same_user" checked aria-describedby="mode-same-hint">
+            <span data-s="mode_same"></span>
+          </label>
+          <p class="hint mode-hint" id="mode-same-hint" data-s="mode_same_hint"></p>
+          <label class="mode">
+            <input type="radio" name="mode" value="windows_user" aria-describedby="mode-windows-hint">
+            <span data-s="mode_windows"></span>
+          </label>
+          <p class="hint mode-hint" id="mode-windows-hint" data-s="mode_windows_hint"></p>
+        </fieldset>
         <p class="field-error" id="add-error" role="alert"></p>
         <div class="row-actions">
           <button type="button" class="secondary" id="add-cancel" data-s="cancel"></button>

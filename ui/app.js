@@ -87,6 +87,9 @@
         </button>`;
       li.querySelector(".name").textContent = a.account.label;
       li.querySelector(".state-text").textContent = stateText(a);
+      // Which kind of account this is, read with the status through aria-describedby (Main has none).
+      const kind = { same_user: t("kind_same"), windows_user: t("kind_windows") }[a.account.kind];
+      if (kind) li.querySelector(".state-text").textContent += " · " + kind;
       const primary = li.querySelector('[data-role="primary"]');
       const problem = a.state === "Problem";
       primary.textContent = problem ? t("menu_repair") : running ? t("show") : t("open");
@@ -130,7 +133,8 @@
         if (ok) return openAccount(id, true);
         return;
       }
-      announce(t(outcome === "Focused" ? "focused" : "opened", { label: a.account.label }));
+      const said = { Focused: "focused", SlotRecreated: "slot_recreated" }[outcome] || "opened";
+      announce(t(said, { label: a.account.label }));
     } catch (e) { showError(e); }
     await refresh();
   }
@@ -149,7 +153,7 @@
           announce(t("renamed", { label: value.trim() }));
         }
       } else if (action === "import") {
-        const ok = await confirmDialog({ title: t("import_title", { label }), body: t("import_body"), ok: t("import_confirm") });
+        const ok = await confirmDialog({ title: t("import_title", { label }), body: t(a.account.kind === "same_user" ? "import_body_same" : "import_body"), ok: t("import_confirm") });
         if (ok) {
           await invoke("import_history", { id: a.account.id });
           announce(t("imported", { label }));
@@ -160,7 +164,7 @@
       } else if (action === "remove") {
         const ok = await confirmDialog({
           title: t("remove_title", { label }),
-          body: t("remove_body", { user: a.account.windows_user }),
+          body: a.account.kind === "same_user" ? t("remove_body_same") : t("remove_body", { user: a.account.windows_user }),
           ok: t("remove_confirm"),
           danger: true,
         });
@@ -254,7 +258,7 @@
     $("add-form").hidden = !open;
     $("add-open").hidden = open;
     $("add-open").setAttribute("aria-expanded", String(open));
-    if (open) { $("add-label").focus(); } else { $("add-error").textContent = ""; $("add-open").focus(); }
+    if (open) { document.querySelector("input[name=mode][value=same_user]").checked = true; $("add-label").focus(); } else { $("add-error").textContent = ""; $("add-open").focus(); }
     fitWindow();
   }
   $("add-open").addEventListener("click", () => setAddOpen(true));
@@ -268,7 +272,8 @@
     const submit = $("add-submit");
     submit.disabled = true; $("add-label").setAttribute("aria-busy", "true");
     try {
-      await invoke("add_account", { label });
+      const mode = document.querySelector("input[name=mode]:checked").value;
+      await invoke("add_account", { label, mode });
       announce(t("add_done", { label }));
       $("add-label").value = "";
       setAddOpen(false);

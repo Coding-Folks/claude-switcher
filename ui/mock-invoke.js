@@ -10,6 +10,7 @@
     { account: { id: "a-kantor", label: "Kantor", kind: "windows_user", windows_user: "claude-kantor", created_at: "2026-11-12T09:10:00Z" }, state: "Running", bytes: Math.round(1.18 * GB) },
     { account: { id: "a-klien", label: "Klien", kind: "windows_user", windows_user: "claude-klien", created_at: "2026-11-12T09:40:00Z" }, state: "Stopped", bytes: null },
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
+    { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/Irsal/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: "Stopped", bytes: null },
   ];
   const settings = {
     autostart: true,
@@ -38,7 +39,7 @@
       a.state = "Opening"; emit("status", null);
       await wait(150);
       a.state = "Running"; a.bytes = Math.round(0.9 * GB); emit("status", null);
-      return "Launched";
+      return a.account.kind === "same_user" && params.get("slot") === "missing" ? "SlotRecreated" : "Launched";
     },
     async close_account({ id }) { const a = find(id); a.state = "Stopped"; a.bytes = null; emit("status", null); },
     async rename_account({ id, label }) { find(id).account.label = label; },
@@ -49,8 +50,9 @@
       await wait(60);
     },
     async remove_account({ id }) { accounts.splice(accounts.indexOf(find(id)), 1); },
-    async add_account({ label }) {
-      for (const step of ["vault", "create_user", "grant", "bootstrap", "launch"]) {
+    async add_account({ label, mode }) {
+      const same = mode === "same_user";
+      for (const step of same ? ["prepare_slot", "launch"] : ["vault", "create_user", "grant", "bootstrap", "launch"]) {
         emit("progress", { step, account_label: label });
         await wait(60);
         if (params.get("fail") === "add" && step === "create_user") {
@@ -58,7 +60,10 @@
         }
       }
       const slug = label.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "akun";
-      const a = { account: { id: "a-" + Date.now(), label, kind: "windows_user", windows_user: "claude-" + slug, created_at: new Date().toISOString() }, state: "Running", bytes: Math.round(0.8 * GB) };
+      const id = "a-" + Date.now();
+      const a = same
+        ? { account: { id, label, kind: "same_user", windows_user: null, created_at: new Date().toISOString(), data_root: "C:/slots/" + id + "/Local" }, state: "Running", bytes: Math.round(0.8 * GB) }
+        : { account: { id, label, kind: "windows_user", windows_user: "claude-" + slug, created_at: new Date().toISOString() }, state: "Running", bytes: Math.round(0.8 * GB) };
       accounts.push(a);
       return a.account;
     },

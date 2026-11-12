@@ -6,7 +6,7 @@ const AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 async function ready(page: Page, query = '') {
   await page.goto(PANEL + query);
-  await expect(page.locator('.account')).toHaveCount(4);
+  await expect(page.locator('.account')).toHaveCount(5);
 }
 const row = (page: Page, label: string) => page.locator('.account', { has: page.locator('.name', { hasText: label }) });
 
@@ -111,6 +111,7 @@ test('add account announces progress in live region', async ({ page }) => {
   await ready(page);
   await page.getByRole('button', { name: 'Tambah akun' }).click();
   await expect(page.getByLabel('Nama akun')).toBeFocused();
+  await page.getByRole('radio', { name: 'User Windows terpisah' }).check();
   await page.getByLabel('Nama akun').fill('Tim Desain');
   const seen: string[] = [];
   await page.exposeFunction('__seen', (s: string) => seen.push(s));
@@ -118,8 +119,88 @@ test('add account announces progress in live region', async ({ page }) => {
   await page.getByRole('button', { name: 'Buat akun' }).click();
   await expect(page.locator('#live')).toHaveText('Akun Tim Desain siap. Login di jendela Claude yang terbuka.');
   expect(seen.some((s) => /Membuat user Windows/.test(s))).toBe(true);
-  await expect(page.locator('.account')).toHaveCount(5);
+  await expect(page.locator('.account')).toHaveCount(6);
   await expect(page.getByRole('button', { name: 'Tambah akun' })).toBeFocused();
+});
+
+test('add form offers both modes, "User Windows ini" selected by default', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('button', { name: 'Tambah akun' }).click();
+  const group = page.getByRole('group', { name: 'Jalankan di' });
+  await expect(group.getByRole('radio', { name: 'User Windows ini' })).toBeChecked();
+  await expect(group.getByRole('radio', { name: 'User Windows terpisah' })).not.toBeChecked();
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('arrow keys switch mode and the hint follows', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('button', { name: 'Tambah akun' }).click();
+  const same = page.getByRole('radio', { name: 'User Windows ini' });
+  await same.focus();
+  await expect(same).toHaveAccessibleDescription(/tanpa izin admin/);
+  await page.keyboard.press('ArrowDown');
+  const sep = page.getByRole('radio', { name: 'User Windows terpisah' });
+  await expect(sep).toBeChecked();
+  await expect(sep).toHaveAccessibleDescription(/Perlu izin admin/);
+});
+
+test('same-user add never mentions the admin prompt', async ({ page }) => {
+  await ready(page);
+  const seen: string[] = [];
+  await page.exposeFunction('__seen2', (s: string) => seen.push(s));
+  await page.evaluate(() => new MutationObserver(() => (window as any).__seen2(document.getElementById('live')!.textContent)).observe(document.getElementById('live')!, { childList: true, characterData: true, subtree: true }));
+  await page.getByRole('button', { name: 'Tambah akun' }).click();
+  await expect(page.locator('#add-hint')).not.toContainText(/admin/);
+  await page.getByLabel('Nama akun').fill('Slot A');
+  await page.getByRole('button', { name: 'Buat akun' }).click();
+  await expect(page.locator('#live')).toHaveText('Akun Slot A siap. Login di jendela Claude yang terbuka.');
+  expect(seen.some((s) => /Menyiapkan folder akun/.test(s))).toBe(true);
+  expect(seen.filter((s) => /admin|UAC/.test(s))).toEqual([]);
+});
+
+test('separate-user add still asks for the admin prompt', async ({ page }) => {
+  await ready(page);
+  const seen: string[] = [];
+  await page.exposeFunction('__seen3', (s: string) => seen.push(s));
+  await page.evaluate(() => new MutationObserver(() => (window as any).__seen3(document.getElementById('live')!.textContent)).observe(document.getElementById('live')!, { childList: true, characterData: true, subtree: true }));
+  await page.getByRole('button', { name: 'Tambah akun' }).click();
+  await page.getByRole('radio', { name: 'User Windows terpisah' }).check();
+  await page.getByLabel('Nama akun').fill('Kantor 2');
+  await page.getByRole('button', { name: 'Buat akun' }).click();
+  await expect(page.locator('#live')).toHaveText('Akun Kantor 2 siap. Login di jendela Claude yang terbuka.');
+  expect(seen.some((s) => /setujui prompt admin/.test(s))).toBe(true);
+});
+
+test('rows say which kind they are', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Kantor')).toContainText('User terpisah');
+  await expect(row(page, 'Slot B')).toContainText('User ini');
+  await expect(row(page, 'Utama')).not.toContainText('User ');
+  await expect(row(page, 'Slot B').getByRole('button', { name: 'Buka Slot B' })).toHaveAccessibleDescription(/User ini/);
+});
+
+test('import on a same-user account does not mention admin', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Impor riwayat' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Impor riwayat ke Slot B?');
+  await expect(dialog).not.toContainText(/admin/);
+});
+
+test('removing a same-user account says its login and data go', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Hapus' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Login dan data Claude di akun ini ikut terhapus. Akun Utama tidak terpengaruh.');
+  await expect(dialog).not.toContainText('User Windows');
+});
+
+test('opening a slot whose folder was deleted says so', async ({ page }) => {
+  await ready(page, '&slot=missing');
+  await page.getByRole('button', { name: 'Buka Slot B' }).click();
+  await expect(page.locator('#live')).toContainText('dibuat ulang');
 });
 
 test('add with empty name explains the field', async ({ page }) => {
@@ -133,11 +214,12 @@ test('add with empty name explains the field', async ({ page }) => {
 test('add failure shows role=alert and keeps form values', async ({ page }) => {
   await ready(page, '&fail=add');
   await page.getByRole('button', { name: 'Tambah akun' }).click();
+  await page.getByRole('radio', { name: 'User Windows terpisah' }).check();
   await page.getByLabel('Nama akun').fill('Kantor 2');
   await page.getByRole('button', { name: 'Buat akun' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Dibatalkan' })).toHaveText('Dibatalkan. Tidak ada yang berubah.');
   await expect(page.getByLabel('Nama akun')).toHaveValue('Kantor 2');
-  await expect(page.locator('.account')).toHaveCount(4);
+  await expect(page.locator('.account')).toHaveCount(5);
 });
 
 test('remove asks confirmation naming the account, cancel is focused first', async ({ page }) => {
@@ -149,7 +231,7 @@ test('remove asks confirmation naming the account, cancel is focused first', asy
   await expect(dialog).toContainText('claude-kantor');
   await expect(dialog.getByRole('button', { name: 'Batal' })).toBeFocused();
   await dialog.getByRole('button', { name: 'Hapus akun' }).click();
-  await expect(page.locator('.account')).toHaveCount(3);
+  await expect(page.locator('.account')).toHaveCount(4);
   await expect(page.locator('#live')).toHaveText('Akun Kantor dihapus.');
 });
 
