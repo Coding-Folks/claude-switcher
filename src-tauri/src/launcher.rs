@@ -10,7 +10,13 @@ use base64::Engine;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const ERROR_LOGON_FAILURE: i32 = 1326;
+/// Logons Windows refuses for the account itself (wrong password, restriction, expired, disabled,
+/// locked out): all fixed by Perbaiki, which sets a new password and re-enables / unlocks the account.
+const LOGON_REFUSALS: [u32; 5] = [1326, 1327, 1330, 1331, 1909];
+
+pub fn is_logon_refusal(hresult: u32) -> bool {
+    hresult >> 16 == 0x8007 && LOGON_REFUSALS.contains(&(hresult & 0xFFFF))
+}
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -94,7 +100,7 @@ fn run_as(user: &str, pw: &Zeroizing<String>, app: &Path, args: &str, wait: Opti
         )
     };
     if let Err(e) = res {
-        return Err(if e.code().0 & 0xFFFF == ERROR_LOGON_FAILURE && (e.code().0 as u32) >> 16 == 0x8007 {
+        return Err(if is_logon_refusal(e.code().0 as u32) {
             AppError::new(ErrorCode::LogonFailed, "err.logon_failed")
         } else {
             AppError::win32(e.code().0 as u32, "CreateProcessWithLogonW")
@@ -208,6 +214,16 @@ mod tests {
     fn encoded_command_is_utf16le_base64() {
         // "a" -> 61 00 -> "YQA="
         assert_eq!(encode_ps("a"), "YQA=");
+    }
+
+    #[test]
+    fn every_refused_logon_leads_to_repair() {
+        // wrong password, account restriction, password expired, account disabled, locked out
+        for code in [1326u32, 1327, 1330, 1331, 1909] {
+            assert!(is_logon_refusal(0x8007_0000 | code), "{code}");
+        }
+        assert!(!is_logon_refusal(0x8007_0057)); // invalid parameter is a bug, not a repair case
+        assert!(!is_logon_refusal(1326)); // a bare Win32 code is not an HRESULT
     }
 
     #[test]

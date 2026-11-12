@@ -137,7 +137,11 @@ pub fn run_elevated(op: &ElevatedOp, secret: Option<&Path>) -> AppResult<()> {
         ElevatedOp::CreateUser { name } => {
             let pw = read_secret(secret)?;
             crate::winuser::create(name, &pw)?;
-            crate::winuser::hide(name)
+            if let Err(e) = crate::winuser::hide(name) {
+                let _ = crate::winuser::delete(name); // never leave a visible account with an unknown password
+                return Err(e);
+            }
+            Ok(())
         }
         ElevatedOp::SetPassword { name } => crate::winuser::set_password(name, &read_secret(secret)?),
         ElevatedOp::DeleteUser { name } => crate::winuser::delete_with_profile(name),

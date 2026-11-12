@@ -6,7 +6,7 @@ use crate::vault::Zeroizing;
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::NetworkManagement::NetManagement::{
     NetApiBufferFree, NetUserAdd, NetUserDel, NetUserGetInfo, NetUserSetInfo, UF_DONT_EXPIRE_PASSWD,
-    UF_PASSWD_CANT_CHANGE, UF_SCRIPT, USER_INFO_1, USER_INFO_1003, USER_PRIV_USER,
+    UF_PASSWD_CANT_CHANGE, UF_SCRIPT, USER_INFO_1, USER_INFO_1003, USER_INFO_1008, USER_PRIV_USER,
 };
 
 const USER_LIST: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList";
@@ -52,6 +52,12 @@ pub fn set_password(name: &str, password: &Zeroizing<String>) -> AppResult<()> {
     check(
         unsafe { NetUserSetInfo(PCWSTR::null(), PCWSTR(n.as_ptr()), 1003, &info as *const _ as *const u8, None) },
         "NetUserSetInfo",
+    )?;
+    // Same flags as at creation: this also clears "disabled" and "locked out", so Perbaiki fixes those too.
+    let flags = USER_INFO_1008 { usri1008_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD | UF_PASSWD_CANT_CHANGE };
+    check(
+        unsafe { NetUserSetInfo(PCWSTR::null(), PCWSTR(n.as_ptr()), 1008, &flags as *const _ as *const u8, None) },
+        "NetUserSetInfo(flags)",
     )
 }
 
@@ -75,7 +81,12 @@ pub fn sid_of(name: &str) -> Option<String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
     use windows::Win32::Security::{LookupAccountNameW, PSID, SID_NAME_USE};
-    let n = HSTRING::from(name);
+    // Qualify with this computer's name: on a domain PC an unqualified name can resolve to a domain account.
+    let qualified = match (name.contains('\\'), std::env::var("COMPUTERNAME")) {
+        (false, Ok(pc)) => format!("{pc}\\{name}"),
+        _ => name.to_string(),
+    };
+    let n = HSTRING::from(qualified.as_str());
     let (mut sid_len, mut dom_len) = (0u32, 0u32);
     let mut kind = SID_NAME_USE::default();
     unsafe {

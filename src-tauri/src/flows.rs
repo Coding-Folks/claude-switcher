@@ -252,8 +252,14 @@ impl<P: Platform> Flows<P> {
             return Err(e);
         }
         let undo_user = || {
-            let _ = self.p.elevated(ElevatedOp::DeleteUser { name: user.clone() }, None);
-            let _ = self.p.vault_delete(&user);
+            // Keep the password while the Windows user still exists (rollback UAC refused): forgetting it
+            // would leave an account nobody can sign in to.
+            match self.p.elevated(ElevatedOp::DeleteUser { name: user.clone() }, None) {
+                Ok(()) => {
+                    let _ = self.p.vault_delete(&user);
+                }
+                Err(e) => crate::applog::error("rollback left a Windows user", &[("user", &user), ("code", &format!("{:?}", e.code))]),
+            }
         };
         progress("grant");
         if let Err(e) = self.p.grant(&user) {
@@ -283,11 +289,17 @@ impl<P: Platform> Flows<P> {
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: None,
         };
-        {
+        let saved = {
             let _w = self.write.lock().unwrap();
-            let mut list = self.accounts()?;
-            list.push(account.clone());
-            self.store.save(&list)?;
+            self.accounts().and_then(|mut list| {
+                list.push(account.clone());
+                self.store.save(&list)
+            })
+        };
+        if let Err(e) = saved {
+            let _ = self.p.revoke(&user);
+            undo_user(); // nothing recorded it, so do not leave the Windows user behind
+            return Err(e);
         }
         progress("launch");
         match self.p.launch_as(&user, &pw) {
@@ -895,6 +907,29 @@ mod tests {
         f.p.fail.lock().unwrap().insert("create_user", err(ErrorCode::UacCancelled));
         assert_eq!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).unwrap_err().code, ErrorCode::UacCancelled);
         assert_eq!(f.p.calls(), vec!["vault_put claude-kantor", "vault_delete claude-kantor"]);
+    }
+
+    #[test]
+    fn rollback_keeps_the_password_when_the_user_could_not_be_deleted() {
+        let (f, _) = flows();
+        f.p.fail.lock().unwrap().insert("bootstrap", err(ErrorCode::Io));
+        f.p.fail.lock().unwrap().insert("delete_user", err(ErrorCode::UacCancelled)); // rollback UAC refused
+        assert!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).is_err());
+        // the Windows user still exists, so its password must not be thrown away
+        assert!(f.p.vault.lock().unwrap().contains_key("claude-kantor"));
+        assert!(!f.p.calls().contains(&"vault_delete claude-kantor".to_string()), "{:?}", f.p.calls());
+    }
+
+    #[test]
+    fn add_undoes_the_user_when_saving_the_account_fails() {
+        let (f, path) = flows();
+        f.accounts().unwrap();
+        std::fs::create_dir_all(path.with_file_name("accounts.json.tmp")).unwrap(); // save will fail
+        assert!(f.add("Kantor", AddMode::WindowsUser, &|_| {}).is_err());
+        let calls = f.p.calls();
+        assert!(calls.contains(&"delete_user claude-kantor".to_string()), "{calls:?}");
+        assert!(calls.contains(&"revoke claude-kantor".to_string()), "{calls:?}");
+        assert!(!calls.iter().any(|c| c.starts_with("launch_as")), "{calls:?}");
     }
 
     #[test]
