@@ -30,7 +30,7 @@ uuid = { version = "1", features = ["v4"] }
 unicode-normalization = "0.1"
 rand = "0.8"
 zeroize = "1"
-winreg = "0.55"
+winreg = "0.56"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
