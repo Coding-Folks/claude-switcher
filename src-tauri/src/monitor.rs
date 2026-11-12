@@ -37,7 +37,7 @@ pub fn user_data_dir_arg(cmdline: &str) -> Option<PathBuf> {
     let rest = &cmdline[cmdline.find(FLAG)? + FLAG.len()..];
     let value = match rest.strip_prefix('"') {
         Some(q) => &q[..q.find('"')?],
-        None => rest.split_whitespace().next()?,
+        None => &rest[..rest.find(char::is_whitespace).unwrap_or(rest.len())], // up to the first space; may be empty
     };
     (!value.is_empty()).then(|| PathBuf::from(value))
 }
@@ -240,12 +240,14 @@ fn command_line(pid: u32) -> Option<String> {
     const PROCESS_COMMAND_LINE_INFORMATION: PROCESSINFOCLASS = PROCESSINFOCLASS(60);
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut buf = vec![0u8; 8192];
+        // u64 storage keeps the buffer 8-byte aligned for the UNICODE_STRING read below.
+        let mut buf = vec![0u64; 1024];
         let mut needed = 0u32;
-        let mut status = NtQueryInformationProcess(h, PROCESS_COMMAND_LINE_INFORMATION, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut needed);
-        if status.is_err() && needed as usize > buf.len() {
-            buf = vec![0u8; needed as usize];
-            status = NtQueryInformationProcess(h, PROCESS_COMMAND_LINE_INFORMATION, buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut needed);
+        let bytes = |b: &Vec<u64>| (b.len() * 8) as u32;
+        let mut status = NtQueryInformationProcess(h, PROCESS_COMMAND_LINE_INFORMATION, buf.as_mut_ptr() as *mut _, bytes(&buf), &mut needed);
+        if status.is_err() && needed > bytes(&buf) {
+            buf = vec![0u64; (needed as usize).div_ceil(8)];
+            status = NtQueryInformationProcess(h, PROCESS_COMMAND_LINE_INFORMATION, buf.as_mut_ptr() as *mut _, bytes(&buf), &mut needed);
         }
         let _ = CloseHandle(h);
         if status.is_err() {
@@ -310,6 +312,8 @@ mod tests {
         );
         assert_eq!(user_data_dir_arg(r"Claude.exe --user-data-dir=C:\d\claude_x --y"), Some(PathBuf::from(r"C:\d\claude_x")));
         assert_eq!(user_data_dir_arg("Claude.exe --type=gpu-process"), None);
+        assert_eq!(user_data_dir_arg("Claude.exe --user-data-dir= --x"), None); // empty value, not the next flag
+        assert_eq!(user_data_dir_arg("Claude.exe --user-data-dir="), None);
     }
 
     #[test]

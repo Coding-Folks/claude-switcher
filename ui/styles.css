@@ -155,7 +155,7 @@ input[type="text"] {
 .mode { display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; font-weight: 400; cursor: pointer; }
 .mode input { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--primary); }
 .mode-hint { padding-left: 1.75rem; }
-.kind { color: var(--muted); }
+
 .field-error { margin: 0; color: var(--negative); font-size: var(--fs-small); }
 .field-error:empty { display: none; }
 .row-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
