@@ -1,12 +1,26 @@
 name: Release
 
 # Push a tag like v0.2.0 to build the installer and draft a GitHub release with it.
+#
+# Signing (docs/CODE-SIGNING.md) switches on when the repository variable SIGNPATH_ORGANIZATION_ID and
+# the secret SIGNPATH_API_TOKEN exist. Then the app exe is signed first (it is also the admin helper
+# behind the UAC prompt), the installer is built around the signed exe, and the installer is signed
+# too. Without them the release is unsigned. Either way every asset gets a build provenance
+# attestation and a SHA256SUMS entry.
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: write      # draft the release
+  id-token: write      # build provenance attestation
+  attestations: write
+  actions: read        # SignPath downloads the uploaded artifacts
+
+env:
+  SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+  SIGNPATH_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'claude-switcher' }}
+  SIGNPATH_POLICY: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
 
 jobs:
   build:
@@ -19,17 +33,91 @@ jobs:
           workspaces: src-tauri
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build app
+        working-directory: src-tauri
+        run: cargo tauri build --no-bundle
+
+      # ---- sign the app exe ----
+      - name: Upload app for signing
+        if: env.SIGN == 'true'
+        id: app-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-unsigned
+          path: src-tauri/target/release/claude-switcher.exe
+          if-no-files-found: error
+      - name: Sign app
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: app-exe
+          github-artifact-id: ${{ steps.app-unsigned.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600   # an approver confirms each request by hand
+          output-artifact-directory: signed-app
+      - name: Use the signed app
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item signed-app/claude-switcher.exe src-tauri/target/release/claude-switcher.exe -Force
+
+      # ---- installer ----
       - name: Build installer
         working-directory: src-tauri
-        run: cargo tauri build
-      - name: Rename (no spaces) and checksum
+        run: cargo tauri bundle --bundles nsis
+      - name: Collect installer (no spaces in the name)
         shell: pwsh
         run: |
-          $dir = "src-tauri/target/release/bundle/nsis"
           $out = New-Item -ItemType Directory -Force dist
-          Get-ChildItem "$dir/*-setup.exe" | ForEach-Object { Copy-Item $_ (Join-Path $out ($_.Name -replace ' ', '-')) }
-          Get-ChildItem "$out/*-setup.exe" | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name } |
-            Set-Content -Encoding ascii "$out/SHA256SUMS.txt"
+          Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" |
+            ForEach-Object { Copy-Item $_ (Join-Path $out ($_.Name -replace ' ', '-')) }
+
+      - name: Upload installer for signing
+        if: env.SIGN == 'true'
+        id: installer-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-unsigned
+          path: dist/*-setup.exe
+          if-no-files-found: error
+      - name: Sign installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.installer-unsigned.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installer
+      - name: Use the signed installer and check both signatures
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item signed-installer/*-setup.exe dist/ -Force
+          foreach ($f in @("src-tauri/target/release/claude-switcher.exe") + (Get-ChildItem dist/*-setup.exe).FullName) {
+            $s = Get-AuthenticodeSignature $f
+            if ($s.Status -ne 'Valid') { throw "$f is not validly signed: $($s.Status) $($s.StatusMessage)" }
+            "$f signed by $($s.SignerCertificate.Subject)"
+          }
+
+      # ---- checksums, provenance, release ----
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist/*-setup.exe |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content -Encoding ascii dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*-setup.exe
       - name: Draft release
         uses: softprops/action-gh-release@v2
         with:
