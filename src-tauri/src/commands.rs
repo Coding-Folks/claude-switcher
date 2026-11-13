@@ -32,6 +32,7 @@ pub struct Settings {
     free_ram: u64,
     total_ram: u64,
     recovered_backup: Option<String>,
+    lang: crate::i18n::Lang,
 }
 
 #[derive(Clone, Serialize)]
@@ -188,6 +189,7 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
         free_ram: snap.free_ram,
         total_ram: snap.total_ram,
         recovered_backup,
+        lang: crate::i18n::current(),
     })
 }
 
@@ -196,6 +198,25 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> AppResult<()> {
     let m = app.autolaunch();
     let r = if enabled { m.enable() } else { m.disable() };
     r.map_err(|e| AppError::new(ErrorCode::Io, "err.generic").with_detail(e.to_string()))
+}
+
+/// Saves the interface language, renames a default-named main account to match, and redraws the tray.
+#[tauri::command]
+pub async fn set_language(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    lang: crate::i18n::Lang,
+) -> AppResult<()> {
+    let file = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ClaudeSwitcher")
+        .join("lang.txt");
+    crate::i18n::save(&file, lang).map_err(AppError::io)?;
+    crate::i18n::set(lang);
+    let f = state.flows()?;
+    let label = crate::i18n::text_for(lang).main_label;
+    blocking(&app, &state.busy, move || f.relabel_main(label)).await
 }
 
 #[tauri::command]

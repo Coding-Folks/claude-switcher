@@ -324,3 +324,60 @@ test('200% text zoom does not clip labels', async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(overflow).toBe(false);
 });
+
+// ---------- English ----------
+
+test('English: axe AA and every string is translated', async ({ page }) => {
+  await ready(page, '&lang=en');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Claude accounts');
+  await expect(page.getByRole('button', { name: 'Add account' })).toBeVisible();
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await expect(page.getByRole('radio', { name: 'This Windows user' })).toBeChecked();
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('switching language redraws the panel, renames a default Main and keeps focus on the picker', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Utama')).toBeVisible();
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.focus();
+  await picker.selectOption('en');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Claude accounts');
+  await expect(row(page, 'Main')).toBeVisible();
+  await expect(page.locator('#count')).toHaveText('2 running');
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('id');
+  await expect(row(page, 'Utama')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Akun Claude');
+});
+
+test('language names are marked with their own language', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#lang option[value="en"]')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#lang option[value="id"]')).toHaveAttribute('lang', 'id');
+});
+
+test('English: 200% text zoom does not clip labels', async ({ page }) => {
+  await ready(page, '&lang=en');
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await page.addStyleTag({ content: 'html { font-size: 200%; }' });
+  const clipped = await page.evaluate(() =>
+    [...document.querySelectorAll('button, label, h1, .finding')].filter((e) => e.scrollWidth > (e as HTMLElement).clientWidth + 1).map((e) => e.textContent));
+  expect(clipped).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+});
+
+test('every language has every key', async ({ page }) => {
+  await ready(page);
+  const missing = await page.evaluate(() => {
+    const all = (window as any).STRINGS_BY_LANG as Record<string, Record<string, string>>;
+    const keys = new Set(Object.values(all).flatMap((d) => Object.keys(d)));
+    return Object.entries(all).flatMap(([lang, d]) => [...keys].filter((k) => !(k in d)).map((k) => `${lang}:${k}`));
+  });
+  expect(missing).toEqual([]);
+  const langs = await page.evaluate(() => (window as any).LANGS.map((l: string[]) => l[0]).sort());
+  expect(langs).toEqual(Object.keys(await page.evaluate(() => (window as any).STRINGS_BY_LANG)).sort());
+});

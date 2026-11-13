@@ -13,7 +13,7 @@
   let settings = { autostart: false, free_ram: 0, total_ram: 0 };
   let menuFor = null;              // { id, button }
 
-  const fmtGB = (b) => (b / GB).toLocaleString("id-ID", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " GB";
+  const fmtGB = (b) => (b / GB).toLocaleString(window.LANG === "id" ? "id-ID" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " GB";
   const announce = (msg) => { $("live").textContent = ""; requestAnimationFrame(() => { $("live").textContent = msg; }); };
   const showError = (err, vars) => {
     const id = err && err.message_id && window.STRINGS[err.message_id] ? err.message_id : "err.generic";
@@ -111,6 +111,7 @@
   async function refresh() {
     try {
       [accounts, settings] = await Promise.all([invoke("list_accounts"), invoke("get_settings")]);
+      if (settings.lang && settings.lang !== window.LANG) applyLang(settings.lang);
       render();
       // Rust hands the backup path out once; say it once (spec §6).
       if (settings.recovered_backup) showError({ message_id: "err.store_corrupt", detail: settings.recovered_backup });
@@ -336,10 +337,29 @@
     getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
   }
 
+  // ---------- language ----------
+  function applyLang(lang) {
+    setLang(lang);
+    document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
+    $("lang").value = window.LANG;
+  }
+  for (const [code, name] of window.LANGS) {
+    const o = document.createElement("option");
+    o.value = code; o.textContent = name; o.lang = code;
+    $("lang").append(o);
+  }
+  $("lang").addEventListener("change", async (e) => {
+    const prev = window.LANG;
+    applyLang(e.target.value);
+    render();
+    try { await invoke("set_language", { lang: window.LANG }); }
+    catch (err) { applyLang(prev); render(); showError(err); }
+  });
+
   // ---------- boot ----------
-  document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
+  applyLang(window.LANG);
   listen("status", () => refresh());
-  listen("open-add", () => setAddOpen(true)); // tray menu "Tambah akun…"
+  listen("open-add", () => setAddOpen(true)); // tray menu "Add account…"
   listen("progress", (ev) => announce(t("progress_" + ev.payload.step)));
   refresh().then(() => {
     const first = $("accounts").querySelector('[data-role="primary"]:not(:disabled)');

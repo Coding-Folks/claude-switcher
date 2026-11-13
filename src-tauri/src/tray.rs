@@ -1,5 +1,5 @@
 //! Tray icon: left click toggles the panel above the icon; right click shows a native menu
-//! (accounts with a check when running, "Tambah akun…", "Keluar").
+//! (accounts with a check when running, "Add account…", "Quit"), in the language from `i18n`.
 
 use crate::commands::AppState;
 use crate::flows::{AccountState, AccountView, OpenOutcome};
@@ -16,7 +16,7 @@ fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tau
     menu.append(&MenuItem::with_id(
         app,
         "panel",
-        "Buka panel	Ctrl+Alt+K",
+        crate::i18n::text().open_panel,
         true,
         None::<&str>,
     )?)?;
@@ -38,14 +38,14 @@ fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tau
     menu.append(&MenuItem::with_id(
         app,
         "add",
-        "Tambah akun…",
+        crate::i18n::text().add,
         true,
         None::<&str>,
     )?)?;
     menu.append(&MenuItem::with_id(
         app,
         "quit",
-        "Keluar",
+        crate::i18n::text().quit,
         true,
         None::<&str>,
     )?)?;
@@ -53,7 +53,8 @@ fn build_menu(app: &AppHandle, views: &[AccountView]) -> tauri::Result<(Menu<tau
 }
 
 fn tooltip(running: usize) -> String {
-    format!("Claude Switcher — {running} berjalan · Ctrl+Alt+K")
+    let word = crate::i18n::text().running;
+    format!("Claude Switcher — {running} {word} · Ctrl+Alt+K")
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {

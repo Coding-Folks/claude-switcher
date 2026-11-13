@@ -29,7 +29,7 @@ impl Account {
     pub fn main() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            label: "Utama".into(),
+            label: crate::i18n::text().main_label.into(),
             kind: AccountKind::Main,
             windows_user: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -152,7 +152,7 @@ mod tests {
             LoadOutcome::Ok(got) => {
                 assert_eq!(got.len(), 1);
                 assert_eq!(got[0].kind, AccountKind::Main);
-                assert_eq!(got[0].label, "Utama");
+                assert_eq!(got[0].label, crate::i18n::text().main_label);
             }
             other => panic!("{other:?}"),
         }

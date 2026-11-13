@@ -5,6 +5,7 @@ pub mod elevated;
 pub mod error;
 pub mod flows;
 pub mod history;
+pub mod i18n;
 pub mod launcher;
 pub mod monitor;
 pub mod naming;
@@ -32,6 +33,7 @@ fn data_dir(var: &str) -> PathBuf {
 pub fn run() {
     applog::init(&data_dir("LOCALAPPDATA").join("logs"));
     let store_path = data_dir("APPDATA").join("accounts.json");
+    i18n::set(i18n::load(&data_dir("APPDATA").join("lang.txt")));
     let first_run = !store_path.exists();
     let flows = platform::WinPlatform::new()
         .map(|p| Arc::new(flows::Flows::new(p, store::Store::new(&store_path))));
@@ -79,6 +81,7 @@ pub fn run() {
             commands::import_history,
             commands::get_settings,
             commands::set_autostart,
+            commands::set_language,
             commands::hide_panel,
         ])
         .setup(move |app| {

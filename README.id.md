@@ -20,9 +20,9 @@ membuat semua akun terbuka bersamaan, masing-masing di jendelanya sendiri, semen
 dan memory tetap dipakai bersama.
 
 <p align="center">
-  <img src="docs/assets/panel-light.png" alt="Panel Claude Switcher berisi lima akun dengan status dan pemakaian RAM" width="300" />
+  <img src="docs/assets/panel-light-id.png" alt="Panel Claude Switcher berisi lima akun dengan status dan pemakaian RAM" width="300" />
   &nbsp;&nbsp;
-  <img src="docs/assets/panel-add.png" alt="Form Tambah akun dengan pilihan Jalankan di" width="300" />
+  <img src="docs/assets/panel-add-id.png" alt="Form Tambah akun dengan pilihan Jalankan di" width="300" />
 </p>
 
 ## Fitur
@@ -43,6 +43,7 @@ dan memory tetap dipakai bersama.
 - **Ramah keyboard dan pembaca layar:** `Ctrl+Alt+K` membuka panel dari mana saja. Mengikuti
   WCAG 2.2 AA, diuji dengan axe dan Narrator.
 - **Tema terang dan gelap** mengikuti Windows, serta mendukung mode kontras tinggi.
+- **Bahasa Indonesia dan English**, mengikuti bahasa Windows atau pilihan Anda sendiri.
 
 ## Instalasi
 
@@ -52,9 +53,11 @@ dan memory tetap dipakai bersama.
    Aplikasi terpasang untuk semua user di `Program Files` (satu kali persetujuan admin).
 3. Buka **Claude Switcher** dari Start Menu. Ikonnya muncul di tray.
 
-> **Muncul peringatan SmartScreen?** Installer belum ditandatangani (code signing), jadi Windows
-> mungkin menyebut penerbitnya tidak dikenal. Pilih **More info → Run anyway**, atau build sendiri
-> dari kode sumber. Setiap rilis mencantumkan SHA-256 installer untuk Anda cocokkan.
+> **Muncul peringatan SmartScreen?** Tanda tangan kode lewat SignPath Foundation sedang disiapkan.
+> Sampai aktif, installer belum ditandatangani, jadi Windows mungkin menyebut penerbitnya tidak
+> dikenal. Pilih **More info → Run anyway**, atau build sendiri dari kode sumber. Setiap rilis
+> mencantumkan SHA-256 installer, dan mulai 0.2.0 juga atestasi build GitHub. Lihat
+> [cara memeriksa unduhan](docs/CODE-SIGNING.md#checking-a-download).
 
 **Kebutuhan:** Windows 10 atau 11 (x64) dan Claude Desktop versi Microsoft Store / MSIX.
 
@@ -69,6 +72,7 @@ dan memory tetap dipakai bersama.
 | Menyalin sesi Code ke akun itu | **⋯ → Impor riwayat** (login ke akun itu dulu) |
 | Mengatasi masalah | Tombol **Perbaiki** muncul di baris yang bermasalah |
 | Menghapus akun | **⋯ → Hapus** (login dan datanya ikut terhapus; akun Utama aman) |
+| Mengganti bahasa | **Bahasa** di bagian bawah panel |
 
 ## Cara kerja singkat
 
@@ -89,7 +93,8 @@ Penjelasan lengkap: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
   membaca atau menulis file di folder pertukarannya sendiri.
 - Tidak ada data yang dikirim ke mana pun: tidak ada telemetri dan tidak ada permintaan jaringan.
 
-Menemukan celah keamanan? Lihat [SECURITY.md](SECURITY.md).
+Menemukan celah keamanan? Lihat [SECURITY.md](SECURITY.md). Cara rilis dibangun dan ditandatangani:
+[docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
 
 ## Lisensi dan merek dagang
 

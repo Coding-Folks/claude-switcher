@@ -1,5 +1,5 @@
 // Browser-only stand-in for Tauri's invoke/listen, used with ?mock=1 (UI tests and design checks).
-// ?fail=add makes add_account fail with UAC cancelled; ?ram=low sets free RAM to 1.5 GB.
+// ?lang=en starts in English; ?fail=add makes add_account fail with UAC cancelled; ?ram=low sets free RAM to 1.5 GB.
 (function () {
   const params = new URLSearchParams(location.search);
   if (!params.has("mock")) return;
@@ -12,8 +12,17 @@
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
     { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
   ];
+  // English sample names for ?lang=en (README screenshots); the Indonesian ones are what the tests use.
+  if (params.get("lang") === "en") {
+    const en = { Utama: "Main", Kantor: "Work", Klien: "Client", Riset: "Research" };
+    for (const a of accounts) {
+      const l = en[a.account.label];
+      if (l) { a.account.label = l; if (a.account.windows_user) a.account.windows_user = "claude-" + l.toLowerCase(); }
+    }
+  }
   const settings = {
     autostart: true,
+    lang: params.get("lang") || "id",
     total_ram: Math.round(23.69 * GB),
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
     recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
@@ -31,6 +40,12 @@
     async list_accounts() { return structuredClone(accounts); },
     async get_settings() { const out = { ...settings }; settings.recovered_backup = null; return out; },
     async set_autostart({ enabled }) { settings.autostart = enabled; },
+    async set_language({ lang }) {
+      settings.lang = lang;
+      const main = accounts.find((a) => a.account.kind === "main");
+      if (["Utama", "Main"].includes(main.account.label)) main.account.label = lang === "id" ? "Utama" : "Main";
+      emit("status");
+    },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {
       const a = find(id);

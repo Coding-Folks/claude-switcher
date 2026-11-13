@@ -49,6 +49,7 @@ account open at once, each in its own window, while your skills, plugins and mem
 - **Keyboard and screen-reader friendly.** `Ctrl+Alt+K` opens the panel from anywhere; it follows
   WCAG 2.2 AA and is tested with axe and Narrator.
 - **Light and dark** to match Windows, and high-contrast mode support.
+- **English and Bahasa Indonesia**, following your Windows language or your own choice.
 
 ## Install
 
@@ -58,9 +59,11 @@ account open at once, each in its own window, while your skills, plugins and mem
    It installs for all users into `Program Files` (one admin prompt).
 3. Start **Claude Switcher** from the Start menu. Its icon appears in the tray.
 
-> **SmartScreen warning?** The installer is not code-signed yet, so Windows may say it is from an
-> unknown publisher. Choose **More info → Run anyway**, or build it yourself (below). Each release
-> lists the SHA-256 of the installer so you can check it.
+> **SmartScreen warning?** Code signing through the SignPath Foundation is being set up; until then
+> the installer is unsigned and Windows may say it is from an unknown publisher. Choose
+> **More info → Run anyway**, or build it yourself (below). Every release lists the SHA-256 of the
+> installer, and from 0.2.0 carries a GitHub build attestation —
+> see [how to check a download](docs/CODE-SIGNING.md#checking-a-download).
 
 **Requirements:** Windows 10 or 11 (x64) and Claude Desktop (the Microsoft Store / MSIX build).
 
@@ -69,15 +72,17 @@ account open at once, each in its own window, while your skills, plugins and mem
 | To | Do |
 |---|---|
 | Open the panel | Click the tray icon, or press **Ctrl+Alt+K** |
-| Add an account | **Tambah akun** → name it → choose where it runs → **Buat akun**, then sign in in the new Claude window |
-| Open or show an account | **Buka** / **Tampilkan** on its row |
-| Close one account | **⋯ → Tutup** |
-| Copy your Code sessions into it | **⋯ → Impor riwayat** (sign in to that account first) |
-| Fix a problem | **Perbaiki** appears on the row when something is wrong |
-| Remove an account | **⋯ → Hapus** (its login and data go; your main account is untouched) |
+| Add an account | **Add account** → name it → choose **Run as** → **Create account**, then sign in in the new Claude window |
+| Open or show an account | **Open** / **Show** on its row |
+| Close one account | **⋯ → Close** |
+| Copy your Code sessions into it | **⋯ → Import history** (sign in to that account first) |
+| Fix a problem | **Repair** appears on the row when something is wrong |
+| Remove an account | **⋯ → Remove** (its login and data go; your Main account is untouched) |
+| Change the language | **Language** at the bottom of the panel |
 
-The interface is in Bahasa Indonesia today. All text lives in [`ui/strings.js`](ui/strings.js) —
-translations are very welcome.
+The panel and tray menu speak **English** and **Bahasa Indonesia**. They follow your Windows display
+language until you pick one. All text lives in [`ui/strings.js`](ui/strings.js) and
+[`src-tauri/src/i18n.rs`](src-tauri/src/i18n.rs) — more languages are very welcome.
 
 ## How it works, in short
 
@@ -98,16 +103,17 @@ Details, folder layout and the findings behind both modes: [docs/HOW-IT-WORKS.md
   or writes files in its own exchange folder.
 - Nothing is sent anywhere: the app has no telemetry and makes no network requests of its own.
 
-Found a vulnerability? Please see [SECURITY.md](SECURITY.md).
+Found a vulnerability? Please see [SECURITY.md](SECURITY.md). How releases are built and signed:
+[docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
 
 ## Limitations
 
 - Windows only, and only the MSIX build of Claude Desktop.
 - Accounts on **this Windows user** share Windows-level settings with your main account (for example
   the `claude://` sign-in link and "Open with"). If a Claude update changes how it picks its data
-  folder, the app marks those accounts *Bermasalah* and suggests the separate-user mode.
+  folder, the app marks those accounts *Needs repair* and suggests the separate-user mode.
 - "Launch at login" inside Claude itself only knows your main account; use Claude Switcher's own
-  **Jalan saat Windows mulai** instead.
+  **Start with Windows** instead.
 
 ## Build from source
 

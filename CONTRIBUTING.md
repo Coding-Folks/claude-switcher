@@ -7,8 +7,9 @@ to our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - **Report a bug** with the [bug template](https://github.com/Coding-Folks/claude-switcher/issues/new/choose).
   Add the relevant lines of `%LOCALAPPDATA%\ClaudeSwitcher\logs\app.log`.
-- **Translate the UI.** Every string is in [`ui/strings.js`](ui/strings.js); an English version is the
-  most wanted.
+- **Translate the UI.** The panel's strings are in [`ui/strings.js`](ui/strings.js) (copy the `en`
+  block) and the tray menu's in [`src-tauri/src/i18n.rs`](src-tauri/src/i18n.rs). Add the language to
+  `LANGS` and to `Lang`; the UI tests check that every key exists in every language.
 - **Pick an issue** labelled `good first issue` or `help wanted`, and say you are on it.
 - **Security issues** go through [SECURITY.md](SECURITY.md), not public issues.
 

@@ -501,6 +501,23 @@ impl<P: Platform> Flows<P> {
         self.store.save(&list)
     }
 
+    /// Gives the main account the default name of the new language, unless the user renamed it.
+    pub fn relabel_main(&self, default_label: &str) -> AppResult<()> {
+        let _w = self.write.lock().unwrap();
+        let mut list = self.accounts()?;
+        let mut changed = false;
+        for a in list.iter_mut().filter(|a| a.kind == AccountKind::Main) {
+            if crate::i18n::MAIN_DEFAULTS.contains(&a.label.as_str()) && a.label != default_label {
+                a.label = default_label.to_string();
+                changed = true;
+            }
+        }
+        if changed {
+            self.store.save(&list)?;
+        }
+        Ok(())
+    }
+
     pub fn remove(&self, id: &str) -> AppResult<()> {
         let a = self.find(id)?;
         if a.kind == AccountKind::Main {
@@ -1460,6 +1477,28 @@ mod tests {
             .iter()
             .any(|a| a.label == "Kantor Pusat"));
         assert_eq!(f.rename(&id, " ").unwrap_err().code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn relabel_main_follows_language_but_keeps_a_custom_name() {
+        let (f, _) = flows();
+        let id = main_id(&f);
+        f.rename(&id, "Utama").unwrap();
+        f.relabel_main("Main").unwrap();
+        let label = |f: &Flows<_>| {
+            f.accounts()
+                .unwrap()
+                .into_iter()
+                .find(|a| a.id == id)
+                .unwrap()
+                .label
+        };
+        assert_eq!(label(&f), "Main");
+        f.relabel_main("Utama").unwrap();
+        assert_eq!(label(&f), "Utama");
+        f.rename(&id, "Pribadi").unwrap();
+        f.relabel_main("Main").unwrap();
+        assert_eq!(label(&f), "Pribadi");
     }
 
     #[test]
