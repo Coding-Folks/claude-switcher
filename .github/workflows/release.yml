@@ -7,6 +7,10 @@ name: Release
 # behind the UAC prompt), the installer is built around the signed exe, and the installer is signed
 # too. Without them the release is unsigned. Either way every asset gets a build provenance
 # attestation and a SHA256SUMS entry.
+#
+# Updates (docs/CODE-SIGNING.md#updates) switch on when the secret TAURI_SIGNING_PRIVATE_KEY exists
+# and src-tauri/updater.pub holds its public key: the final installer is signed for the updater and
+# latest.json is attached, which installed copies read once the release is published.
 on:
   push:
     tags: ['v*']
@@ -19,6 +23,7 @@ permissions:
 
 env:
   SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+  UPDATES: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
   SIGNPATH_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'claude-switcher' }}
   SIGNPATH_POLICY: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
 
@@ -27,6 +32,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check the update key setup
+        shell: pwsh
+        run: |
+          $pub = (Get-Content src-tauri/updater.pub -Raw).Trim()
+          if ($env:UPDATES -eq 'true' -and -not $pub) { throw "TAURI_SIGNING_PRIVATE_KEY is set but src-tauri/updater.pub is empty: commit the public key first (docs/CODE-SIGNING.md#updates)." }
+          if ($env:UPDATES -ne 'true' -and $pub) { throw "src-tauri/updater.pub has a key but the TAURI_SIGNING_PRIVATE_KEY secret is missing: installed copies would look for updates that never come." }
+          "updates: $env:UPDATES"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -106,6 +118,20 @@ jobs:
             "$f signed by $($s.SignerCertificate.Subject)"
           }
 
+      # ---- update signature and latest.json (on the final, Authenticode-signed installer) ----
+      - name: Sign the update and write latest.json
+        if: env.UPDATES == 'true'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $setup = Get-ChildItem dist/*-setup.exe | Select-Object -First 1
+          cargo tauri signer sign $setup.FullName
+          if ($LASTEXITCODE) { throw "signing the update failed" }
+          ./.github/scripts/latest-json.ps1 -Setup $setup.FullName -Tag $env:GITHUB_REF_NAME -Repo $env:GITHUB_REPOSITORY -Out dist/latest.json
+          Get-Content dist/latest.json
+
       # ---- checksums, provenance, release ----
       - name: Checksums
         shell: pwsh
@@ -126,3 +152,4 @@ jobs:
           files: |
             dist/*-setup.exe
             dist/SHA256SUMS.txt
+            dist/latest.json

@@ -177,7 +177,8 @@ mod tests {
             parsed.endpoints[0].as_str(),
             "https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json"
         );
-        assert!(parsed.require_signed_version);
+        // `cargo tauri signer sign` does not record the version in the signature, so this must stay off.
+        assert!(!parsed.require_signed_version);
         let windows = parsed.windows.expect("windows config");
         assert_eq!(format!("{:?}", windows.install_mode), "Passive");
     }

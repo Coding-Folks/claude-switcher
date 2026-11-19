@@ -86,6 +86,15 @@ Removing it deletes the Windows user, their profile folder (unlinking the juncti
 and only reads or writes `<uuid>.secret` / `<uuid>.result.json` files directly inside
 `%LOCALAPPDATA%\ClaudeSwitcher\tmp`. Passwords travel in a file there, never on a command line.
 
+## Updates
+
+When the build carries an update key (`src-tauri/updater.pub`), the app fetches
+`https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json` 10 seconds after
+it starts and every 6 hours. That is its only network request, and it sends nothing but an ordinary
+HTTPS request. A newer version is shown in the panel; **Perbarui** downloads the installer, checks its
+signature against the built-in key, and runs it in passive mode (one UAC prompt, a progress bar), after
+which the app restarts. How releases are signed: [CODE-SIGNING.md](CODE-SIGNING.md#updates).
+
 ## What is shared and what is not
 
 | | Shared between accounts | Per account |

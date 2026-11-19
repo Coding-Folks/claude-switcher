@@ -34,8 +34,32 @@ commits by committers; outside contributions come in as reviewed pull requests.
 ## Privacy
 
 This program will not transfer any information to other networked systems unless specifically
-requested by the user or the person installing or operating it. It has no telemetry, no update check
-and no network requests of its own; see [SECURITY.md](../SECURITY.md).
+requested by the user or the person installing or operating it. It has no telemetry. Its only network
+request is the update check described under [Updates](#updates): it asks github.com for the newest
+release's `latest.json`, sends nothing about the user, and installs an update only when the user
+presses **Perbarui**; see [SECURITY.md](../SECURITY.md).
+
+## Updates
+
+Installed copies can update themselves from GitHub releases (`tauri-plugin-updater`). Every update is
+signed with a separate **update key**, independent of Authenticode, and the app refuses an installer
+whose signature does not match the public key built into it.
+
+**One-time setup (maintainer):**
+
+1. On your own machine: `cargo tauri signer generate -w ~/.tauri/claude-switcher.key` and choose a
+   password. Keep the private key file and password safe and backed up: if they are lost, installed
+   copies can no longer be updated automatically.
+2. Repository secrets: `TAURI_SIGNING_PRIVATE_KEY` = the content of `claude-switcher.key`,
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = its password.
+3. Put the content of `claude-switcher.key.pub` in `src-tauri/updater.pub` and commit it. The release
+   workflow refuses to run when only one of the two is set up.
+
+**Each release:** the workflow signs the final installer (after SignPath, when that is on) with the
+update key, writes `latest.json` and attaches both to the draft release. Installed copies see it only
+once the release is **published**, through
+`https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json`. The tag must be
+the app's version (`v` + `version` in `src-tauri/tauri.conf.json`).
 
 ## Checking a download
 
