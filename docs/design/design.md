@@ -101,7 +101,7 @@ Tambah akun baru lewat app dan login dengan akun ke-2. Shortcut lama `Claude (Ak
   2. Daftar akun (`ul`). Tiap baris: label; status teks ("Berjalan · 1,4 GB", "Mati", "Membuka…", "Bermasalah") dengan indikator bentuk/warna sebagai pelengkap; tombol utama **Buka** / **Tampilkan**; tombol menu "Opsi untuk <label>" (Tutup, Ganti nama, Perbaiki, Hapus).
   3. Tombol **Tambah akun** → form inline (label + Batal/Buat) dengan langkah progres yang diumumkan.
   4. Footer: "RAM bebas 9,2 GB" dan toggle "Jalan saat Windows mulai".
-- Arah visual ditentukan saat implementasi dengan skill `design-taste-frontend` (anti-slop): tipografi sistem (Segoe UI Variable), palet netral dengan satu aksen, tanpa gradien/glassmorphism/emoji dekoratif, mengikuti tema terang/gelap Windows.
+- Arah visual ditentukan saat implementasi dengan skill `design-taste-frontend` (anti-slop): tipografi sistem (Segoe UI Variable), palet netral dengan satu aksen, tanpa gradien/glassmorphism/emoji dekoratif, mengikuti tema terang/gelap Windows. _(Diganti 2026-11-19: panel kini memakai brand kit Coding Folks, lihat [branding-coding-folks.md](branding-coding-folks.md).)_
 
 ### Aksesibilitas (WCAG 2.2 AA)
 - HTML semantik (`button`, `ul/li`, `form`, `label`); ARIA hanya bila tidak ada padanan native. Menu opsi memakai pola menu button WAI-ARIA.

@@ -18,6 +18,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
   that account, and a "Claude – <name>" shortcut appears in the Start Menu under Claude Switcher.
   Main keeps Claude's own button, so existing pins are untouched.
 
+### Changed
+
+- The panel, app icon and social preview follow the Coding Folks brand kit: Instrument Sans with IBM
+  Plex Mono for numbers (bundled, never downloaded), the brand blue on the main button, the kit's
+  greys and rounded cards, and "by Coding Folks" in the footer. The app icon keeps its two cards and
+  orange dot in the kit's exact colours with the kit's app-icon corners. Contrast stays WCAG 2.2 AA in
+  light, dark and high-contrast.
+
 ### Fixed
 
 - Signing in with Google in a new account (this Windows user) finished in the Main account instead:

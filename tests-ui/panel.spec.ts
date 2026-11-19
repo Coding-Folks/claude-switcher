@@ -381,3 +381,76 @@ test('every language has every key', async ({ page }) => {
   const langs = await page.evaluate(() => (window as any).LANGS.map((l: string[]) => l[0]).sort());
   expect(langs).toEqual(Object.keys(await page.evaluate(() => (window as any).STRINGS_BY_LANG)).sort());
 });
+
+// ---- Coding Folks brand kit (docs/design/branding-coding-folks.md) ----
+
+test('brand fonts load from the app itself', async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => document.fonts.check('16px "Instrument Sans"'))).toBe(true);
+  expect(await page.evaluate(() => document.fonts.check('12px "IBM Plex Mono"'))).toBe(true);
+  const family = await page.locator('#add-open').evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(family.startsWith('"Instrument Sans"')).toBe(true);
+  const num = await page.locator('#count').evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(num.startsWith('"IBM Plex Mono"')).toBe(true);
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`primary button uses the brand blue (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await ready(page);
+    const bg = await page.locator('#add-open').evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toBe('rgb(13, 106, 255)');
+  });
+}
+
+test('footer says the app is by Coding Folks, in both languages', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('.foot')).toContainText('oleh Coding Folks');
+  await ready(page, '&lang=en');
+  await expect(page.locator('.foot')).toContainText('by Coding Folks');
+});
+
+test('a 40-character account name does not widen the panel', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Kantor').getByRole('button', { name: 'Opsi untuk Kantor' }).click();
+  await page.getByRole('menuitem', { name: 'Ganti nama' }).click();
+  await page.locator('#confirm-input').fill('W'.repeat(40));
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('.name', { hasText: 'WWWW' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
+// Contrast measured on the computed colours (axe does not see hover states).
+function contrast(a: string, b: string) {
+  const lum = (c: string) => {
+    const [r, g, bl] = c.match(/\d+/g)!.slice(0, 3).map((v) => {
+      const x = Number(v) / 255;
+      return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`hovered primary button text stays AA (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await ready(page);
+    const btn = page.locator('#add-open');
+    await btn.hover();
+    await page.waitForTimeout(200); // the 120 ms background transition
+    const [fg, bg] = await btn.evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el).backgroundColor]);
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+test('the stopped dot and the "other" RAM colour stay visible on light surfaces (3:1)', async ({ page }) => {
+  await ready(page);
+  const other = await page.evaluate(() => {
+    const d = document.createElement('i'); d.style.color = 'var(--other)'; document.body.append(d);
+    const c = getComputedStyle(d).color; d.remove(); return c;
+  });
+  expect(contrast(other, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
+});
