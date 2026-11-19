@@ -2,6 +2,7 @@
 //! taskbar identity stamped on that account's Claude windows. See docs/design/taskbar-per-account.md.
 
 pub mod icon;
+pub mod shell;
 
 /// Taskbar colours for non-Main accounts, in the order they are given out.
 pub const PALETTE: [&str; 8] = [
