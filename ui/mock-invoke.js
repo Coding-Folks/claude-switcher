@@ -12,6 +12,13 @@
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
     { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
   ];
+  // ?many=12: twelve accounts, for the scrolling list and the search.
+  const many = Number(params.get("many")) || 0;
+  const extra = ["Tim Desain", "Tim Data", "Keuangan", "Hukum", "Riset Pasar", "Klien Beta", "Klien Gamma"];
+  for (let i = 0; accounts.length < many && i < extra.length; i++) {
+    const id = "a-x" + i;
+    accounts.push({ account: { id, label: extra[i], kind: "same_user", windows_user: null, created_at: "2026-11-13T08:00:00Z", data_root: `C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/${id}/Local` }, state: "Stopped", bytes: null });
+  }
   // English sample names for ?lang=en (README screenshots); the Indonesian ones are what the tests use.
   if (params.get("lang") === "en") {
     const en = { Utama: "Main", Kantor: "Work", Klien: "Client", Riset: "Research" };

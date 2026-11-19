@@ -66,11 +66,25 @@
     }
   }
 
+  // More than this many accounts: a search field above the list (the list itself scrolls from ~6 rows).
+  const SEARCH_FROM = 9;
+  function shownAccounts() {
+    const many = accounts.length >= SEARCH_FROM;
+    $("search-box").hidden = !many;
+    if (!many) $("search").value = "";
+    const q = $("search").value.trim().toLowerCase();
+    const shown = q ? accounts.filter((a) => a.account.label.toLowerCase().includes(q)) : accounts;
+    $("no-match").hidden = shown.length > 0;
+    if (!shown.length) $("no-match").textContent = t("no_match", { q: $("search").value.trim() });
+    $("accounts").hidden = !shown.length;
+    return shown;
+  }
+
   function renderAccounts() {
     const list = $("accounts");
     const focusedId = document.activeElement && document.activeElement.closest(".account")?.dataset.id;
     const focusedRole = document.activeElement?.dataset.role;
-    list.replaceChildren(...accounts.map((a) => {
+    list.replaceChildren(...shownAccounts().map((a) => {
       const li = document.createElement("li");
       li.className = "account is-" + a.state.toLowerCase();
       li.dataset.id = a.account.id;
@@ -337,6 +351,19 @@
     getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
   }
 
+  // ---------- search ----------
+  $("search").addEventListener("input", () => renderAccounts());
+  $("search").addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("search").value) {
+      // First Esc clears the search; the next one closes the panel as usual.
+      e.preventDefault(); e.stopPropagation();
+      $("search").value = ""; renderAccounts();
+    } else if (e.key === "ArrowDown") {
+      const first = $("accounts").querySelector('[data-role="primary"]:not(:disabled)');
+      if (first) { e.preventDefault(); first.focus(); }
+    }
+  });
+
   // ---------- language ----------
   // The picker is the landing page's Select (a popover listbox), built as the ARIA "select-only
   // combobox": focus stays on the button, aria-activedescendant names the highlighted option.
@@ -412,6 +439,7 @@
   function applyLang(lang) {
     setLang(lang);
     document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
+    document.querySelectorAll("[data-ph]").forEach((el) => { el.placeholder = t(el.dataset.ph); });
     const name = (window.LANGS.find(([c]) => c === window.LANG) || [, window.LANG])[1];
     $("lang-value").textContent = name;
     $("lang-value").lang = window.LANG;

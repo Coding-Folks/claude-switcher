@@ -563,3 +563,72 @@ test('the language list stays inside the window and closes on an outside click',
   await page.locator('h1').click();
   await expect(page.getByRole('listbox')).toBeHidden();
 });
+
+// ---- Many accounts: the list scrolls, search above eight ----
+
+async function readyMany(page: Page) {
+  await page.goto(PANEL + '&many=12');
+  await expect(page.locator('.account')).toHaveCount(12);
+}
+
+test('twelve accounts: the list scrolls and the panel does not grow', async ({ page }) => {
+  await ready(page);
+  const five = await page.evaluate(() => document.querySelector('.panel')!.scrollHeight);
+  await readyMany(page);
+  const twelve = await page.evaluate(() => document.querySelector('.panel')!.scrollHeight);
+  expect(twelve).toBeLessThanOrEqual(five + 120); // capped list + the search field
+  const [sh, ch] = await page.locator('#accounts').evaluate((el) => [el.scrollHeight, el.clientHeight]);
+  expect(sh).toBeGreaterThan(ch);
+});
+
+test('arrow keys reach the last account and scroll it into view', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('button', { name: 'Tampilkan Utama' }).focus();
+  for (let i = 0; i < 11; i++) await page.keyboard.press('ArrowDown');
+  const last = page.locator('.account').last().locator('[data-role="primary"]');
+  await expect(last).toBeFocused();
+  const [btn, list] = [await last.boundingBox(), await page.locator('#accounts').boundingBox()];
+  expect(btn!.y + btn!.height).toBeLessThanOrEqual(list!.y + list!.height + 1);
+});
+
+test('no search with five accounts', async ({ page }) => {
+  await ready(page);
+  await expect(page.getByRole('searchbox')).toBeHidden();
+});
+
+test('search appears above eight accounts and filters by name, ignoring case', async ({ page }) => {
+  await readyMany(page);
+  const search = page.getByRole('searchbox', { name: 'Cari akun' });
+  await search.fill('klien');
+  await expect(page.locator('.account')).toHaveCount(3);
+  await search.fill('zzz');
+  await expect(page.locator('.account')).toHaveCount(0);
+  await expect(page.locator('#no-match')).toHaveText('Tidak ada akun bernama “zzz”.');
+});
+
+test('Esc in the search clears it and keeps the panel open', async ({ page }) => {
+  await readyMany(page);
+  const search = page.getByRole('searchbox', { name: 'Cari akun' });
+  await search.fill('tim');
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(page.locator('.account')).toHaveCount(12);
+  await expect(search).toBeFocused();
+});
+
+test('renaming while filtered applies the filter again', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('tim');
+  await expect(page.locator('.account')).toHaveCount(2);
+  await row(page, 'Tim Data').getByRole('button', { name: 'Opsi untuk Tim Data' }).click();
+  await page.getByRole('menuitem', { name: 'Ganti nama' }).click();
+  await page.locator('#confirm-input').fill('Keuangan Dua');
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('.account')).toHaveCount(1);
+});
+
+test('axe AA with twelve accounts and a search', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('klien');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});

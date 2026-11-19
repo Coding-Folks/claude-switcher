@@ -138,7 +138,11 @@ h1 { font-size: var(--fs-title); font-weight: 652; letter-spacing: -0.01em; marg
 .legend .key-free { background: var(--track); box-shadow: inset 0 0 0 1px var(--control); }
 
 /* Accounts list: one card, rows split by rules */
+/* About six rows, then the list scrolls inside; the rest of the panel never moves. The thumb is the
+   kit's orange (the landing page's scrollbar). */
 .accounts {
+  max-height: 23rem; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--accent) transparent;
   margin: 0; padding: 0; list-style: none;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
 }
@@ -182,14 +186,17 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 .add > .primary { width: 100%; }
 .add-form { display: flex; flex-direction: column; gap: 0.5rem; }
 label { font-weight: 600; }
-input[type="text"], select {
+input[type="text"], input[type="search"], select {
   min-height: var(--control-height-lg); padding: 0 1rem;
   background: var(--surface); border: 1px solid var(--control); border-radius: 16px;
   transition: border-color 150ms, box-shadow 150ms;
 }
 /* The landing page's focus: the border turns brand blue (4.6:1, the visible change) with a soft ring. */
-input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+input[type="text"]:focus, input[type="search"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
 .hint { margin: 0; color: var(--muted); font-size: var(--fs-small); }
+.search input { width: 100%; }
+input::placeholder { color: var(--muted); opacity: 1; }
+#no-match { padding: 0.75rem 0; text-align: center; }
 .modes { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .modes legend { padding: 0; margin-bottom: 0.25rem; font-weight: 600; }
 .mode { display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; font-weight: 456; cursor: pointer; }

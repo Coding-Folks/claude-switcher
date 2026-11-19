@@ -27,7 +27,12 @@
       <ul class="legend" id="ram-legend"></ul>
     </section>
 
+    <div class="search" id="search-box" hidden>
+      <label for="search" class="visually-hidden" data-s="search_label"></label>
+      <input id="search" type="search" autocomplete="off" spellcheck="false" maxlength="40" data-ph="search_label">
+    </div>
     <ul class="accounts" id="accounts" aria-labelledby="title"></ul>
+    <p class="hint" id="no-match" role="status" hidden></p>
 
     <div class="add">
       <button type="button" class="primary md" id="add-open" data-s="add_account" aria-expanded="false" aria-controls="add-form"></button>

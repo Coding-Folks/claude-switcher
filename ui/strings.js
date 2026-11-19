@@ -76,6 +76,8 @@ window.STRINGS_BY_LANG = {
     language: "Bahasa",
     shortcut_hint: "Buka panel: Ctrl+Alt+K",
     byline_by: "oleh",
+    search_label: "Cari akun",
+    no_match: "Tidak ada akun bernama “{q}”.",
 
     "err.uac_cancelled": "Dibatalkan. Tidak ada yang berubah.",
     "err.claude_missing": "Claude Desktop tidak ditemukan. Instal dulu dari claude.ai/download.",
@@ -166,6 +168,8 @@ window.STRINGS_BY_LANG = {
     language: "Language",
     shortcut_hint: "Open the panel: Ctrl+Alt+K",
     byline_by: "by",
+    search_label: "Search accounts",
+    no_match: "No account named “{q}”.",
 
     "err.uac_cancelled": "Cancelled. Nothing changed.",
     "err.claude_missing": "Claude Desktop was not found. Install it from claude.ai/download first.",
