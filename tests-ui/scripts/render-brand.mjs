@@ -1,6 +1,6 @@
 // Renders the brand SVG to PNGs (app icon source, README banner, social preview) with installed Edge.
 // Run: node tests-ui/scripts/render-brand.mjs  (uses tests-ui's @playwright/test and installed Edge)
-// Optional: put instrument-sans-latin-wght-normal.woff2 (OFL) next to this script for the brand font.
+// Fonts: the Coding Folks brand fonts bundled with the panel (ui/fonts, OFL).
 import { chromium } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,11 +9,10 @@ import { join, dirname } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..');
 const mark = readFileSync(join(repo, 'assets/brand/logo-mark.svg'), 'utf8');
-let fontCss = '';
-try {
-  const font = readFileSync(join(here, 'instrument-sans-latin-wght-normal.woff2')).toString('base64');
-  fontCss = `@font-face{font-family:'Instrument Sans';src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:400 700;}`;
-} catch { /* falls back to the system sans-serif */ }
+const font = (f) => readFileSync(join(repo, 'ui/fonts', f)).toString('base64');
+const fontCss =
+  `@font-face{font-family:'Instrument Sans';src:url(data:font/woff2;base64,${font('instrument-sans-latin-wght-normal.woff2')}) format('woff2');font-weight:400 700;}` +
+  `@font-face{font-family:'IBM Plex Mono';src:url(data:font/woff2;base64,${font('ibm-plex-mono-latin-500-normal.woff2')}) format('woff2');font-weight:500;}`;
 
 const b = await chromium.launch({ channel: 'msedge' });
 async function shot(html, w, h, out, transparent = false) {
