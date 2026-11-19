@@ -220,6 +220,47 @@ impl<P: Platform> Flows<P> {
         Ok(())
     }
 
+    /// Gives every non-Main account without a taskbar colour one, saves, and returns the list.
+    pub fn ensure_colors(&self) -> AppResult<Vec<Account>> {
+        let _w = self.write.lock().unwrap();
+        let mut list = self.accounts()?;
+        let mut changed = false;
+        for i in 0..list.len() {
+            let valid = list[i]
+                .color
+                .as_deref()
+                .is_some_and(|c| crate::taskbar::icon::parse_hex(c).is_some());
+            if list[i].kind == AccountKind::Main || valid {
+                continue;
+            }
+            list[i].color = None; // a hand-edited "blue" gets a real colour
+            let used: Vec<String> = list
+                .iter()
+                .filter_map(|a| a.color.clone())
+                .filter(|c| crate::taskbar::icon::parse_hex(c).is_some())
+                .collect();
+            let used: Vec<&str> = used.iter().map(String::as_str).collect();
+            list[i].color = Some(crate::taskbar::next_color(&used, used.len()).to_string());
+            changed = true;
+        }
+        if changed {
+            self.store.save(&list)?;
+        }
+        Ok(list)
+    }
+
+    /// Non-Main accounts that run now, with the root pid of their Claude.
+    pub fn running_roots(&self) -> Vec<(Account, u32)> {
+        let snap = self.p.snapshot();
+        let accounts = self.accounts().unwrap_or_default();
+        let slots = self.slot_dirs(&accounts);
+        accounts
+            .into_iter()
+            .filter(|a| a.kind != AccountKind::Main)
+            .filter_map(|a| self.running_in(&a, &snap, &slots).map(|(pid, _)| (a, pid)))
+            .collect()
+    }
+
     pub fn list(&self) -> AppResult<Vec<AccountView>> {
         let snap = self.p.snapshot();
         let accounts = self.accounts()?;
@@ -351,6 +392,7 @@ impl<P: Platform> Flows<P> {
             windows_user: Some(user.clone()),
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: None,
+            color: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -395,6 +437,7 @@ impl<P: Platform> Flows<P> {
             windows_user: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: Some(root.clone()),
+            color: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -873,6 +916,7 @@ mod tests {
             windows_user: Some(user.into()),
             created_at: "2026-11-12T00:00:00Z".into(),
             data_root: None,
+            color: None,
         };
         list.push(a.clone());
         f.store.save(&list).unwrap();
@@ -904,6 +948,7 @@ mod tests {
             windows_user: None,
             created_at: "x".into(),
             data_root: Some(root.clone()),
+            color: None,
         });
         f.store.save(&list).unwrap();
         (id, root.display().to_string())
@@ -924,6 +969,55 @@ mod tests {
             .find(|v| v.account.id == id)
             .unwrap();
         (v.state, v.bytes)
+    }
+
+    #[test]
+    fn ensure_colors_gives_slots_distinct_colours_and_main_none() {
+        let (f, _d) = flows();
+        let (a, _) = add_slot(&f, "A");
+        let (b, _) = add_slot(&f, "B");
+        let list = f.ensure_colors().unwrap();
+        let color = |id: &str| list.iter().find(|x| x.id == id).unwrap().color.clone();
+        assert_eq!(color(&a).as_deref(), Some("#2F6FDE"));
+        assert_eq!(color(&b).as_deref(), Some("#1E9E6A"));
+        assert_eq!(color(&main_id(&f)), None);
+        assert_eq!(
+            f.ensure_colors().unwrap(),
+            list,
+            "a second call changes nothing"
+        );
+        assert_eq!(f.accounts().unwrap(), list, "colours are saved");
+    }
+
+    #[test]
+    fn ensure_colors_replaces_a_colour_that_is_not_a_colour() {
+        let (f, _d) = flows();
+        let (a, _) = add_slot(&f, "A");
+        let mut list = f.accounts().unwrap();
+        list.iter_mut().find(|x| x.id == a).unwrap().color = Some("blue".into());
+        f.store.save(&list).unwrap();
+        let list = f.ensure_colors().unwrap();
+        assert_eq!(
+            list.iter().find(|x| x.id == a).unwrap().color.as_deref(),
+            Some("#2F6FDE")
+        );
+    }
+
+    #[test]
+    fn running_roots_lists_running_non_main_accounts_with_their_pid() {
+        let (f, _d) = flows();
+        let (a, root) = add_slot(&f, "A");
+        add_slot(&f, "B"); // not running
+        f.p.running
+            .lock()
+            .unwrap()
+            .push(slot_instance(&root, 42, 1));
+        let got: Vec<(String, u32)> = f
+            .running_roots()
+            .into_iter()
+            .map(|(acc, pid)| (acc.id, pid))
+            .collect();
+        assert_eq!(got, vec![(a, 42)]);
     }
 
     #[test]

@@ -52,6 +52,18 @@ The link is never written to the log.
 To tell the instances apart (they all run as you), the app reads the `--user-data-dir=` that Claude's
 child processes carry on their command line.
 
+### Own taskbar button per account
+
+All Claude windows carry the same taskbar identity (AppUserModelID), so Windows stacks them on one
+button. While it runs, Claude Switcher gives every non-Main account's windows their own identity
+(`CodingFolks.ClaudeSwitcher.Account.<id>`), relaunch command (`claude-switcher.exe --launch <id>`),
+name and icon, every 2 seconds because Claude drops them when it recreates a window. The icon is
+Claude's own logo from the installed package with its orange plate recoloured to the account's colour.
+The taskbar takes a button's icon and name from a Start Menu shortcut with the same identity, so each
+account also gets one. Main is never changed. The approach follows other open-source multi-account
+tools, such as [multiclaude-windows](https://github.com/tcollins590/multiclaude-windows) and
+[multi-claude](https://github.com/thomasog/multi-claude).
+
 ## Mode 2 — a separate Windows user ("User Windows terpisah")
 
 1. The app generates a random 32-character password and stores it in Windows Credential Manager
@@ -92,3 +104,6 @@ and only reads or writes `<uuid>.secret` / `<uuid>.result.json` files directly i
 | `%LOCALAPPDATA%\ClaudeSwitcher\slots\` | Mode 1 accounts |
 | `%LOCALAPPDATA%\ClaudeSwitcher\tmp\`, `bootstrap\` | Short-lived files for the admin helper and first start |
 | Windows Credential Manager `ClaudeSwitcher/*` | Mode 2 passwords |
+| `%PUBLIC%\ClaudeSwitcher\icons\` | Each account's recoloured icon (here because the Windows 11 taskbar cannot read icons inside a user folder) |
+| `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Claude Switcher\` | "Claude – <name>" shortcut per account |
+| `HKCU\Software\Classes\claude` | `claude://` handler, so a Google sign-in returns to the account that started it |

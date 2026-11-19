@@ -13,6 +13,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Release workflow ready for Authenticode signing through the SignPath Foundation (app exe first, then
   the installer), plus a GitHub build provenance attestation and checksum for every installer; see
   `docs/CODE-SIGNING.md`.
+- Every account other than Main gets its own taskbar button: a Claude icon in the account's colour
+  (given automatically) and "Claude – <name>", in Alt+Tab too. Right-click → **Pin to taskbar** pins
+  that account, and a "Claude – <name>" shortcut appears in the Start Menu under Claude Switcher.
+  Main keeps Claude's own button, so existing pins are untouched.
 
 ### Fixed
 

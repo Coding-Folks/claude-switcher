@@ -32,6 +32,7 @@ rand = "0.8"
 zeroize = "1"
 winreg = "0.55"
 base64 = "0.22"
+ico = "0.6"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [profile.release]
@@ -60,4 +61,9 @@ features = [
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
   "Win32_Globalization",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_Storage_EnhancedStorage",
+  "Win32_UI_Shell_PropertiesSystem",
 ]
