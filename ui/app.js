@@ -338,23 +338,85 @@
   }
 
   // ---------- language ----------
-  function applyLang(lang) {
-    setLang(lang);
-    document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
-    $("lang").value = window.LANG;
-  }
+  // The picker is the landing page's Select (a popover listbox), built as the ARIA "select-only
+  // combobox": focus stays on the button, aria-activedescendant names the highlighted option.
+  const picker = $("lang"), list = $("lang-list");
+  const CHECK = '<svg class="check" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m3.5 8.5 3 3 6-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   for (const [code, name] of window.LANGS) {
-    const o = document.createElement("option");
-    o.value = code; o.textContent = name; o.lang = code;
-    $("lang").append(o);
+    const li = document.createElement("li");
+    li.id = "lang-opt-" + code; li.setAttribute("role", "option"); li.dataset.value = code; li.lang = code;
+    li.innerHTML = CHECK; li.prepend(name);
+    li.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus on the button
+    li.addEventListener("click", () => chooseLang(code));
+    li.addEventListener("pointermove", () => highlight(options().indexOf(li)));
+    list.append(li);
   }
-  $("lang").addEventListener("change", async (e) => {
+  const options = () => [...list.children];
+  let active = -1;
+  function highlight(i) {
+    const opts = options();
+    active = Math.max(0, Math.min(opts.length - 1, i));
+    opts.forEach((o, k) => o.classList.toggle("is-active", k === active));
+    picker.setAttribute("aria-activedescendant", opts[active].id);
+  }
+  function openList() {
+    if (!list.hidden) return;
+    list.hidden = false;
+    picker.setAttribute("aria-expanded", "true");
+    highlight(options().findIndex((o) => o.dataset.value === window.LANG));
+    // Open upward when there is no room below (the picker sits at the bottom of the panel).
+    list.classList.remove("up");
+    const r = picker.getBoundingClientRect();
+    if (r.bottom + 6 + list.offsetHeight > window.innerHeight - 8) list.classList.add("up");
+  }
+  function closeList() {
+    if (list.hidden) return;
+    list.hidden = true;
+    picker.setAttribute("aria-expanded", "false");
+    picker.removeAttribute("aria-activedescendant");
+  }
+  async function chooseLang(code) {
+    closeList();
+    picker.focus();
+    if (code === window.LANG) return;
     const prev = window.LANG;
-    applyLang(e.target.value);
+    applyLang(code);
     render();
     try { await invoke("set_language", { lang: window.LANG }); }
     catch (err) { applyLang(prev); render(); showError(err); }
+  }
+  picker.addEventListener("click", () => (list.hidden ? openList() : closeList()));
+  picker.addEventListener("keydown", (e) => {
+    const open = !list.hidden, n = options().length;
+    if (!open && ["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); openList(); return; }
+    if (!open) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); highlight(active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); highlight(active - 1); }
+    else if (e.key === "Home") { e.preventDefault(); highlight(0); }
+    else if (e.key === "End") { e.preventDefault(); highlight(n - 1); }
+    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chooseLang(options()[active].dataset.value); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeList(); }
+    else if (e.key === "Tab") { closeList(); }
+    else if (e.key.length === 1 && /\S/.test(e.key)) {
+      // Type a letter: the next language whose name starts with it.
+      const opts = options(), k = e.key.toLowerCase();
+      for (let step = 1; step <= n; step++) {
+        const i = (active + step) % n;
+        if (opts[i].textContent.trim().toLowerCase().startsWith(k)) { highlight(i); break; }
+      }
+    }
   });
+  document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".picker")) closeList(); });
+  picker.addEventListener("blur", () => closeList());
+
+  function applyLang(lang) {
+    setLang(lang);
+    document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
+    const name = (window.LANGS.find(([c]) => c === window.LANG) || [, window.LANG])[1];
+    $("lang-value").textContent = name;
+    $("lang-value").lang = window.LANG;
+    options().forEach((o) => o.setAttribute("aria-selected", String(o.dataset.value === window.LANG)));
+  }
 
   // ---------- boot ----------
   applyLang(window.LANG);

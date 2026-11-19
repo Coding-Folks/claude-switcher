@@ -55,9 +55,11 @@ test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus 
   await ready(page);
   await page.locator('#autostart').focus();
   await page.keyboard.press('Tab');
+  await expect(page.locator('#lang')).toBeFocused(); // the language picker is the last control
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Tampilkan Utama' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.locator('#autostart')).toBeFocused();
+  await expect(page.locator('#lang')).toBeFocused();
 });
 
 test('the keyboard shortcut that opens the panel is stated in it', async ({ page }) => {
@@ -343,21 +345,23 @@ test('switching language redraws the panel, renames a default Main and keeps foc
   await expect(row(page, 'Utama')).toBeVisible();
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.focus();
-  await picker.selectOption('en');
+  await picker.press('Enter');
+  await page.getByRole('option', { name: 'English' }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Claude accounts');
   await expect(row(page, 'Main')).toBeVisible();
   await expect(page.locator('#count')).toHaveText('2 running');
-  await page.getByRole('combobox', { name: 'Language' }).selectOption('id');
+  await page.getByRole('combobox', { name: 'Language' }).click();
+  await page.getByRole('option', { name: 'Bahasa Indonesia' }).click();
   await expect(row(page, 'Utama')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Akun Claude');
 });
 
 test('language names are marked with their own language', async ({ page }) => {
   await ready(page);
-  await expect(page.locator('#lang option[value="en"]')).toHaveAttribute('lang', 'en');
-  await expect(page.locator('#lang option[value="id"]')).toHaveAttribute('lang', 'id');
+  await expect(page.locator('#lang-list [role="option"][data-value="en"]')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#lang-list [role="option"][data-value="id"]')).toHaveAttribute('lang', 'id');
 });
 
 test('English: 200% text zoom does not clip labels', async ({ page }) => {
@@ -485,6 +489,7 @@ test('autostart is a pill toggle', async ({ page }) => {
   expect([box.width, box.height]).toEqual([40, 24]);
   expect(await t.evaluate((el) => getComputedStyle(el).appearance)).toBe('none');
   if (!(await t.isChecked())) await t.click();
+  await page.waitForTimeout(250); // the 150 ms colour transition
   expect(await t.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(13, 106, 255)');
 });
 
@@ -496,4 +501,65 @@ test('the RAM track differs from the panel ground in light mode', async ({ page 
   ]);
   expect(track).not.toBe(ground);
   expect(track).toBe('rgb(209, 211, 216)');
+});
+
+// ---- Language picker like the landing page Select (APG select-only combobox) ----
+
+test('language picker opens with Enter, arrows move, Esc closes and keeps the language', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await expect(picker).toHaveAttribute('aria-expanded', 'true');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-id');
+  await page.keyboard.press('ArrowDown');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-en');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toBeHidden();
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(picker).toBeFocused();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+});
+
+test('typing a letter jumps to that language, Enter chooses it', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('e');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-en');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
+  await expect(page.getByRole('combobox', { name: 'Language' })).toContainText('English');
+});
+
+test('the chosen language is the selected option', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('combobox', { name: 'Bahasa' }).click();
+  await expect(page.getByRole('option', { name: 'Bahasa Indonesia' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('option', { name: 'English' })).toHaveAttribute('aria-selected', 'false');
+});
+
+test('axe AA with the language list open', async ({ page }) => {
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await ready(page);
+    await page.getByRole('combobox', { name: 'Bahasa' }).click();
+    expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  }
+});
+
+test('the language list stays inside the window and closes on an outside click', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.scrollIntoViewIfNeeded();
+  await picker.click();
+  const list = (await page.getByRole('listbox').boundingBox())!;
+  const h = await page.evaluate(() => window.innerHeight);
+  expect(list.y).toBeGreaterThanOrEqual(0);
+  expect(list.y + list.height).toBeLessThanOrEqual(h);
+  await page.locator('h1').click();
+  await expect(page.getByRole('listbox')).toBeHidden();
 });
