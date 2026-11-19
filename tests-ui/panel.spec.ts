@@ -454,3 +454,46 @@ test('the stopped dot and the "other" RAM colour stay visible on light surfaces 
   });
   expect(contrast(other, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
 });
+
+// ---- Components like the landing page (docs/design/update-and-panel-polish.md) ----
+
+test('buttons are pills of the landing page sizes', async ({ page }) => {
+  await ready(page);
+  for (const b of await page.locator('.primary:visible, .secondary:visible').all()) {
+    const r = await b.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+    expect(r, await b.evaluate((e) => e.outerHTML.slice(0, 60))).toBeGreaterThanOrEqual(18);
+  }
+  expect((await page.locator('#add-open').boundingBox())!.height).toBe(44);
+  expect((await page.getByRole('button', { name: 'Buka Klien' }).boundingBox())!.height).toBe(36);
+});
+
+test('text inputs are 44 px with a focus ring', async ({ page }) => {
+  await ready(page);
+  await page.locator('#add-open').click();
+  const input = page.locator('#add-label');
+  await input.focus();
+  await page.waitForTimeout(250); // the 150 ms focus transition
+  expect((await input.boundingBox())!.height).toBe(44);
+  const shadow = await input.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(shadow).toContain('rgb(231, 240, 255)');
+});
+
+test('autostart is a pill toggle', async ({ page }) => {
+  await ready(page);
+  const t = page.locator('#autostart');
+  const box = (await t.boundingBox())!;
+  expect([box.width, box.height]).toEqual([40, 24]);
+  expect(await t.evaluate((el) => getComputedStyle(el).appearance)).toBe('none');
+  if (!(await t.isChecked())) await t.click();
+  expect(await t.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(13, 106, 255)');
+});
+
+test('the RAM track differs from the panel ground in light mode', async ({ page }) => {
+  await ready(page);
+  const [track, ground] = await page.evaluate(() => [
+    getComputedStyle(document.querySelector('.strip')!).backgroundColor,
+    getComputedStyle(document.body).backgroundColor,
+  ]);
+  expect(track).not.toBe(ground);
+  expect(track).toBe('rgb(209, 211, 216)');
+});

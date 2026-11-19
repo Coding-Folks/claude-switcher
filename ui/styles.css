@@ -39,13 +39,16 @@
   --negative: #b3261e;       /* 5.9:1 on white */
   --positive: #2e7d32;
   --focus: #1f2937;
-  --shadow-float: 0 8px 24px rgb(31 41 55 / 0.16);
+  --shadow-float: 0 16px 40px rgb(31 41 55 / 0.16);
+  --ring: #e7f0ff;           /* blue-50: the landing page's focus ring on inputs */
+  --track: #d1d3d8;          /* gray-100: the empty part of the RAM strip (not --ground) */
 
   --radius-card: 16px;       /* the kit's rounded-2xl */
   --radius-control: 12px;
   --gap: 0.75rem;            /* 12px */
   --edge: 1rem;              /* 16px */
-  --control-height: 2.25rem; /* 36px */
+  --control-height: 2.25rem; /* 36px: the landing page's sm button */
+  --control-height-lg: 2.75rem; /* 44px: its md button and its inputs */
   --row-height: 3.25rem;     /* 52px: two-line rows */
   --fs-title: 1rem;
   --fs-body: 0.875rem;
@@ -74,7 +77,9 @@
     --negative: #ff8a80;
     --positive: #6fcf74;
     --focus: #ffffff;
-    --shadow-float: 0 8px 24px rgb(0 0 0 / 0.5);
+    --shadow-float: 0 16px 40px rgb(0 0 0 / 0.5);
+    --ring: rgb(13 106 255 / 0.35);
+    --track: #2d3036;        /* gray-900 */
   }
 }
 
@@ -114,21 +119,21 @@ h1 { font-size: var(--fs-title); font-weight: 652; letter-spacing: -0.01em; marg
 .count { margin: 0; color: var(--muted); font-size: var(--fs-small); }
 
 /* RAM strip: the signature element */
-.ram { display: flex; flex-direction: column; gap: 0.375rem; }
+.ram { display: flex; flex-direction: column; gap: 0.5rem; }
 .finding { margin: 0; color: var(--text); }
 .strip {
   display: flex; gap: 2px; height: 0.5rem;
-  border-radius: 999px; overflow: hidden; background: var(--raised);
+  border-radius: 999px; overflow: hidden; background: var(--track);
 }
 .strip span { display: block; height: 100%; }
 .strip .seg-claude { background: var(--data); }
 .strip .seg-other { background: var(--other); }
 .legend { display: flex; flex-wrap: wrap; column-gap: var(--gap); row-gap: 0.25rem; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: var(--fs-small); }
-.legend li { display: flex; align-items: center; gap: 0.375rem; }
+.legend li { display: flex; align-items: center; gap: 0.5rem; }
 .legend i { width: 0.5rem; height: 0.5rem; border-radius: 999px; display: inline-block; }
 .legend .key-claude { background: var(--data); }
 .legend .key-other { background: var(--other); }
-.legend .key-free { background: var(--raised); box-shadow: inset 0 0 0 1px var(--control); }
+.legend .key-free { background: var(--track); box-shadow: inset 0 0 0 1px var(--control); }
 
 /* Accounts list: one card, rows split by rules */
 .accounts {
@@ -142,7 +147,7 @@ h1 { font-size: var(--fs-title); font-weight: 652; letter-spacing: -0.01em; marg
 .account + .account { border-top: 1px solid var(--rule); }
 .who { flex: 1 1 5rem; min-width: 0; } /* small basis: actions stay on the row even when a scrollbar narrows the panel */
 .name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.state { display: flex; align-items: center; gap: 0.375rem; color: var(--muted); font-size: var(--fs-small); }
+.state { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: var(--fs-small); }
 .dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; flex: none; border: 1.5px solid var(--other); }
 .is-running .dot { background: var(--data); border-color: var(--data); }
 .is-opening .dot { border-style: dashed; border-color: var(--data); }
@@ -150,16 +155,18 @@ h1 { font-size: var(--fs-title); font-weight: 652; letter-spacing: -0.01em; marg
 .is-problem .state { color: var(--negative); }
 
 /* Buttons */
+/* Pills like the landing page's Button: sm = 36px, px-4, 13px medium; md = 44px, px-6, 16px semibold. */
 .primary, .secondary, .ghost, .kebab {
-  min-height: var(--control-height); border-radius: var(--radius-control);
-  padding: 0 0.875rem; cursor: pointer; font-weight: 600;
-  transition: background-color 120ms, border-color 120ms;
+  min-height: var(--control-height); border-radius: 999px;
+  padding: 0 1rem; cursor: pointer; font-size: 0.8125rem; font-weight: 500;
+  transition: background-color 150ms, border-color 150ms;
 }
+.md { min-height: var(--control-height-lg); padding: 0 1.5rem; font-size: 1rem; font-weight: 600; }
 .primary { background: var(--primary); color: var(--on-primary); border: 1px solid var(--primary); }
 .primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .secondary { background: var(--surface); border: 1px solid var(--control); }
 .secondary:hover, .ghost:hover, .kebab:hover { background: var(--raised); }
-.ghost { background: transparent; border: 1px solid var(--control); min-height: 2rem; min-width: 6.25rem; padding: 0 0.75rem; }
+.ghost { background: transparent; border: 1px solid var(--control); min-width: 6.25rem; }
 .kebab {
   width: 2rem; min-height: 2rem; padding: 0; background: transparent; border: 1px solid transparent;
   display: grid; place-items: center; color: var(--muted);
@@ -174,13 +181,16 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 .add-form { display: flex; flex-direction: column; gap: 0.5rem; }
 label { font-weight: 600; }
 input[type="text"], select {
-  min-height: var(--control-height); padding: 0 0.625rem;
-  background: var(--surface); border: 1px solid var(--control); border-radius: var(--radius-control);
+  min-height: var(--control-height-lg); padding: 0 1rem;
+  background: var(--surface); border: 1px solid var(--control); border-radius: 16px;
+  transition: border-color 150ms, box-shadow 150ms;
 }
+/* The landing page's focus: the border turns brand blue (4.6:1, the visible change) with a soft ring. */
+input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
 .hint { margin: 0; color: var(--muted); font-size: var(--fs-small); }
 .modes { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .modes legend { padding: 0; margin-bottom: 0.25rem; font-weight: 600; }
-.mode { display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; font-weight: 400; cursor: pointer; }
+.mode { display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; font-weight: 456; cursor: pointer; }
 .mode input { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--primary); }
 .mode-hint { padding-left: 1.75rem; }
 
@@ -189,14 +199,24 @@ input[type="text"], select {
 .row-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 /* Footer */
-.foot { padding-top: 0.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
-.switch { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; cursor: pointer; min-height: 1.5rem; }
-.switch input { width: 1.5rem; height: 1.5rem; margin: 0; accent-color: var(--primary); }
+.foot { padding-top: 0.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.switch { display: flex; align-items: center; gap: 0.75rem; font-weight: 456; cursor: pointer; min-height: 1.5rem; }
+.switch input {
+  appearance: none; position: relative; flex: none; width: 2.5rem; height: 1.5rem; margin: 0;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--control);
+  cursor: pointer; transition: background-color 150ms, border-color 150ms;
+}
+.switch input::before {
+  content: ""; position: absolute; top: 1px; left: 1px; width: 1.25rem; height: 1.25rem;
+  border-radius: 999px; background: var(--control); transition: transform 150ms, background-color 150ms;
+}
+.switch input:checked { background: var(--primary); border-color: var(--primary); }
+.switch input:checked::before { background: #ffffff; transform: translateX(1rem); }
 .lang { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.5rem; font-weight: 400; }
 .lang select { min-width: 0; max-width: 100%; }
 .lang select { color: inherit; font: inherit; padding-right: 0.25rem; cursor: pointer; }
 
-.alert { margin: 0; padding: 0.5rem 0.75rem; border-radius: var(--radius-control); background: var(--surface); border: 1px solid var(--negative); color: var(--negative); }
+.alert { margin: 0; padding: 0.5rem 0.75rem; border-radius: 12px; background: var(--surface); border: 1px solid var(--negative); color: var(--negative); }
 .alert:empty { display: none; }
 .byline { margin: 0; color: var(--muted); font-size: var(--fs-small); }
 .byline b { font-weight: 600; color: var(--text); }
@@ -204,13 +224,13 @@ input[type="text"], select {
 
 /* Menu and dialog float, so they may carry a shadow */
 .menu {
-  position: fixed; z-index: 10; min-width: 10rem; padding: 0.25rem;
+  position: fixed; z-index: 10; min-width: 10rem; padding: 0.375rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
   box-shadow: var(--shadow-float);
 }
 .menu [role="menuitem"] {
-  display: block; width: 100%; text-align: left; min-height: 2rem; padding: 0 0.75rem;
-  background: transparent; border: 0; border-radius: 8px; cursor: pointer;
+  display: block; width: 100%; text-align: left; min-height: 2.25rem; padding: 0 0.75rem;
+  background: transparent; border: 0; border-radius: 12px; cursor: pointer;
 }
 .menu [role="menuitem"]:hover, .menu [role="menuitem"]:focus-visible { background: var(--raised); outline-offset: -2px; }
 .menu .menu-danger { color: var(--negative); }
@@ -238,5 +258,9 @@ dialog .field { display: flex; flex-direction: column; gap: 0.5rem; margin-botto
   .dot { border-color: CanvasText; }
   .is-problem .dot { background: CanvasText; }
   .primary, .secondary, .ghost, .kebab { border: 1px solid ButtonText; }
+  .switch input { forced-color-adjust: none; background: Canvas; border-color: ButtonText; }
+  .switch input::before { background: ButtonText; }
+  .switch input:checked { background: Highlight; border-color: Highlight; }
+  .switch input:checked::before { background: HighlightText; }
   .accounts, .menu, dialog, .alert { border: 1px solid CanvasText; }
 }
