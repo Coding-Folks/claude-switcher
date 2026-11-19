@@ -23,6 +23,9 @@ pub struct Account {
     /// SameUser only: the slot folder used as LOCALAPPDATA for that Claude.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_root: Option<PathBuf>,
+    /// Non-Main accounts: the `#RRGGBB` of their taskbar icon (given once, see `taskbar::next_color`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 impl Account {
@@ -34,6 +37,7 @@ impl Account {
             windows_user: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: None,
+            color: None,
         }
     }
 }
@@ -129,6 +133,7 @@ mod tests {
             windows_user: user.map(Into::into),
             created_at: "2026-11-12T08:00:00Z".into(),
             data_root: None,
+            color: None,
         }
     }
 
@@ -142,6 +147,19 @@ mod tests {
         s.save(&list).unwrap();
         match s.load().unwrap() {
             LoadOutcome::Ok(got) => assert_eq!(got, list),
+            other => panic!("{other:?}"),
+        }
+    }
+    #[test]
+    fn an_account_saved_before_colours_loads_without_one() {
+        let path = tmp().join("accounts.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"accounts":[{"id":"m","label":"Main","kind":"main","windows_user":null,"created_at":"x"},{"id":"a","label":"Kerja","kind":"same_user","windows_user":null,"created_at":"x"}]}"#,
+        )
+        .unwrap();
+        match Store::new(&path).load().unwrap() {
+            LoadOutcome::Ok(got) => assert!(got.iter().all(|a| a.color.is_none()), "{got:?}"),
             other => panic!("{other:?}"),
         }
     }

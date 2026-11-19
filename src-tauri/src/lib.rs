@@ -14,6 +14,7 @@ pub mod platform;
 pub mod share;
 pub mod slot;
 pub mod store;
+pub mod taskbar;
 pub mod tray;
 pub mod vault;
 pub mod winuser;
