@@ -1,6 +1,8 @@
 //! An own taskbar button per account: colour, recoloured Claude icon, Start Menu shortcut, and the
 //! taskbar identity stamped on that account's Claude windows. See docs/design/taskbar-per-account.md.
 
+pub mod icon;
+
 /// Taskbar colours for non-Main accounts, in the order they are given out.
 pub const PALETTE: [&str; 8] = [
     "#2F6FDE", // blue
