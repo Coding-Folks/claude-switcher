@@ -91,9 +91,10 @@ Penjelasan lengkap: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
   dan tidak pernah ditulis ke disk maupun log.
 - Proses admin hanya menerima empat operasi tetap untuk nama user berawalan `claude-`, dan hanya
   membaca atau menulis file di folder pertukarannya sendiri.
-- Tidak ada telemetri. Satu-satunya permintaan jaringan adalah cek pembaruan: bila rilisnya membawa kunci
-  update, aplikasi meminta `latest.json` rilis terbaru ke github.com 10 detik setelah mulai dan tiap
-  6 jam (unduhannya sendiri dari `objects.githubusercontent.com` milik GitHub). Tidak ada data tentang
+- Tidak ada telemetri. Satu-satunya permintaan jaringan adalah cek pembaruan, dan hanya bila Anda
+  setuju: panel bertanya sekali (**Beri tahu saya bila ada versi baru?**) dan **Cek versi baru** di
+  bagian bawah menyalakan atau mematikannya. Setelah itu aplikasi meminta `latest.json` rilis terbaru ke
+  github.com saat mulai dan tiap 6 jam (unduhannya sendiri dari `objects.githubusercontent.com` milik GitHub). Tidak ada data tentang
   Anda atau akun Anda di dalamnya, hanya yang terlihat dari setiap permintaan HTTPS (alamat IP Anda serta
   nama dan versi aplikasi). Pembaruan hanya dipasang saat Anda menekan **Perbarui**, dan hanya bila tanda
   tangannya cocok dengan kunci di dalam aplikasi.
@@ -103,7 +104,8 @@ Menemukan celah keamanan? Lihat [SECURITY.md](SECURITY.md). Cara rilis dibangun 
 
 ## Pembaruan
 
-Saat ada rilis yang lebih baru, panel menampilkan **Versi x.y.z tersedia** dengan **Perbarui**. Menekannya
+Bila Anda mengizinkan pengecekan (ditanya sekali; toggle di bawah mengubahnya) dan ada rilis yang lebih
+baru, panel menampilkan **Versi x.y.z tersedia** dengan **Perbarui**. Menekannya
 mengunduh installer, memeriksa tanda tangannya, meminta persetujuan admin sekali (UAC), lalu membuka
 aplikasi di versi baru. Tidak ada yang terpasang sendiri. **Lihat perubahan** membuka halaman rilis.
 

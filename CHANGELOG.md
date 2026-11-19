@@ -18,7 +18,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   that account, and a "Claude – <name>" shortcut appears in the Start Menu under Claude Switcher.
   Main keeps Claude's own button, so existing pins are untouched.
 
-- Updates from GitHub: the panel says when a newer version is out, and **Perbarui** downloads it,
+- Updates from GitHub, only with your consent (asked once, then **Check for new versions** in the
+  footer): the panel says when a newer version is out, and **Perbarui** downloads it,
   checks its signature, asks for UAC once and restarts into it. Nothing installs on its own. Needs the
   one-time update key setup in `docs/CODE-SIGNING.md#updates`; until then the check is off.
 - Many accounts: the account list scrolls after about six rows instead of growing the panel, and a

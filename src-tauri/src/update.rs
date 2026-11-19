@@ -3,17 +3,23 @@
 //! `tauri-plugin-updater` reads `latest.json` from the newest published release, downloads the
 //! installer and checks its signature against `updater.pub` before running it (NSIS, passive: one
 //! UAC prompt). With an empty `updater.pub` the plugin is not registered and nothing is checked.
+//!
+//! Nothing is checked without the user's consent either: the panel asks once ("Beri tahu saya bila
+//! ada versi baru?") and then offers a toggle; the answer is kept in `%APPDATA%\ClaudeSwitcher\updates.txt`.
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 const KEY: &str = include_str!("../updater.pub");
 const REPO: &str = "https://github.com/Coding-Folks/claude-switcher";
 const FIRST_CHECK: Duration = Duration::from_secs(10);
 const EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// How often the loop looks at the consent and the clock.
+const TICK: Duration = Duration::from_secs(60);
 /// A stalled connection must not hang the check loop or the panel's "Mengunduh…" forever.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -40,15 +46,104 @@ pub fn percent(got: u64, total: Option<u64>) -> Option<u8> {
     Some((got.saturating_mul(100) / total).min(100) as u8)
 }
 
+/// Whether the user lets Switcher look for new versions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Consent {
+    /// Not answered yet: no checks, the panel asks.
+    Unasked,
+    On,
+    Off,
+}
+
+impl Consent {
+    pub fn parse(s: &str) -> Self {
+        match s.trim() {
+            "on" => Self::On,
+            "off" => Self::Off,
+            _ => Self::Unasked,
+        }
+    }
+    fn code(self) -> &'static str {
+        match self {
+            Self::Unasked => "",
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+    pub fn load(file: &Path) -> Self {
+        std::fs::read_to_string(file)
+            .map(|s| Self::parse(&s))
+            .unwrap_or(Self::Unasked)
+    }
+    pub fn save(self, file: &Path) -> std::io::Result<()> {
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(file, self.code())
+    }
+}
+
+/// `%APPDATA%\ClaudeSwitcher\updates.txt`.
+pub fn consent_file() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ClaudeSwitcher")
+        .join("updates.txt")
+}
+
+/// A check is due when the user agreed and the last one is six hours old (or there was none).
+pub fn due(consent: Consent, last: Option<Instant>, now: Instant) -> bool {
+    consent == Consent::On && last.map_or(true, |l| now.duration_since(l) >= EVERY)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpdateInfo {
     pub version: String,
     pub notes_url: String,
 }
 
-/// The newest update found by the last check.
-#[derive(Default)]
-pub struct UpdateState(Mutex<Option<UpdateInfo>>);
+/// The newest update found by the last check, and the user's consent to checks.
+pub struct UpdateState {
+    offered: Mutex<Option<UpdateInfo>>,
+    consent: Mutex<Consent>,
+}
+
+impl UpdateState {
+    pub fn new(consent: Consent) -> Self {
+        Self {
+            offered: Mutex::new(None),
+            consent: Mutex::new(consent),
+        }
+    }
+}
+
+/// What the panel shows for update checks: "unavailable" (no key in this build), "unasked", "on", "off".
+pub fn checks_setting(app: &AppHandle) -> &'static str {
+    match (pubkey(), app.try_state::<UpdateState>()) {
+        (Some(_), Some(st)) => match *st.consent.lock().unwrap() {
+            Consent::Unasked => "unasked",
+            Consent::On => "on",
+            Consent::Off => "off",
+        },
+        _ => "unavailable",
+    }
+}
+
+/// The user's answer: saved, and an offered update disappears when checks are turned off.
+pub fn set_consent(app: &AppHandle, on: bool) -> AppResult<()> {
+    let consent = if on { Consent::On } else { Consent::Off };
+    consent.save(&consent_file())?;
+    if let Some(st) = app.try_state::<UpdateState>() {
+        *st.consent.lock().unwrap() = consent;
+        if !on {
+            *st.offered.lock().unwrap() = None;
+        }
+    }
+    crate::applog::info("update checks", &[("on", if on { "yes" } else { "no" })]);
+    Ok(())
+}
 
 fn failed(e: impl std::fmt::Display) -> AppError {
     AppError::new(ErrorCode::Io, "err.update_failed").with_detail(e.to_string())
@@ -56,7 +151,11 @@ fn failed(e: impl std::fmt::Display) -> AppError {
 
 /// The update the panel should offer, if any.
 pub fn current(app: &AppHandle) -> Option<UpdateInfo> {
-    app.try_state::<UpdateState>()?.0.lock().unwrap().clone()
+    app.try_state::<UpdateState>()?
+        .offered
+        .lock()
+        .unwrap()
+        .clone()
 }
 
 async fn check(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
@@ -75,15 +174,29 @@ async fn check(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
     }))
 }
 
-/// Checks after a short wait, then every six hours; a change redraws the panel.
+/// With consent: a check shortly after start (or within a minute of the user agreeing), then every six
+/// hours; a change redraws the panel.
 pub fn spawn_checks(app: AppHandle, on_change: impl Fn() + Send + 'static) {
     std::thread::spawn(move || {
         std::thread::sleep(FIRST_CHECK);
+        let mut last: Option<Instant> = None;
         loop {
+            let consent = app
+                .try_state::<UpdateState>()
+                .map(|st| *st.consent.lock().unwrap())
+                .unwrap_or(Consent::Unasked);
+            if consent != Consent::On {
+                last = None; // agreeing later checks right away
+            }
+            if !due(consent, last, Instant::now()) {
+                std::thread::sleep(TICK);
+                continue;
+            }
+            last = Some(Instant::now());
             match tauri::async_runtime::block_on(check(&app)) {
                 Ok(found) => {
                     if let Some(st) = app.try_state::<UpdateState>() {
-                        let mut cur = st.0.lock().unwrap();
+                        let mut cur = st.offered.lock().unwrap();
                         if *cur != found {
                             if let Some(u) = &found {
                                 crate::applog::info("update available", &[("version", &u.version)]);
@@ -99,7 +212,7 @@ pub fn spawn_checks(app: AppHandle, on_change: impl Fn() + Send + 'static) {
                     &[("detail", e.detail.as_deref().unwrap_or(""))],
                 ),
             }
-            std::thread::sleep(EVERY);
+            std::thread::sleep(TICK);
         }
     });
 }
@@ -188,5 +301,41 @@ mod tests {
         assert!(!parsed.require_signed_version);
         let windows = parsed.windows.expect("windows config");
         assert_eq!(format!("{:?}", windows.install_mode), "Passive");
+    }
+
+    #[test]
+    fn consent_is_unasked_until_the_user_answers() {
+        assert_eq!(Consent::parse("on"), Consent::On);
+        assert_eq!(
+            Consent::parse(
+                " off
+"
+            ),
+            Consent::Off
+        );
+        assert_eq!(Consent::parse(""), Consent::Unasked);
+        assert_eq!(Consent::parse("maybe"), Consent::Unasked);
+    }
+
+    #[test]
+    fn consent_is_saved_and_read_back() {
+        let dir = std::env::temp_dir().join(format!("cs-consent-{}", uuid::Uuid::new_v4()));
+        let file = dir.join("updates.txt");
+        assert_eq!(Consent::load(&file), Consent::Unasked);
+        Consent::On.save(&file).unwrap();
+        assert_eq!(Consent::load(&file), Consent::On);
+        Consent::Off.save(&file).unwrap();
+        assert_eq!(Consent::load(&file), Consent::Off);
+    }
+
+    #[test]
+    fn checks_run_only_with_consent_and_when_due() {
+        let now = std::time::Instant::now();
+        let six_h = Duration::from_secs(6 * 60 * 60);
+        assert!(!due(Consent::Unasked, None, now));
+        assert!(!due(Consent::Off, None, now));
+        assert!(due(Consent::On, None, now));
+        assert!(!due(Consent::On, Some(now), now));
+        assert!(due(Consent::On, Some(now - six_h), now));
     }
 }

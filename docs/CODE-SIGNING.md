@@ -35,8 +35,9 @@ commits by committers; outside contributions come in as reviewed pull requests.
 
 This program will not transfer any information to other networked systems unless specifically
 requested by the user or the person installing or operating it. It has no telemetry. Its only network
-request is the update check described under [Updates](#updates): it asks github.com for the newest
-release's `latest.json` (no data about the user beyond what any HTTPS request reveals: the IP address
+request is the update check described under [Updates](#updates), which runs only after the user
+agrees to it in the panel (asked once, then a toggle; off until answered): it asks github.com for the
+newest release's `latest.json` (no data about the user beyond what any HTTPS request reveals: the IP address
 and the app's name and version), and installs an update only when the user presses **Update**
 (**Perbarui**); see [SECURITY.md](../SECURITY.md).
 

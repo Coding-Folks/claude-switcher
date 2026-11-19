@@ -82,6 +82,11 @@ window.STRINGS_BY_LANG = {
     update_notes: "Lihat perubahan",
     update_go: "Perbarui",
     update_downloading: "Mengunduh pembaruan… {p}%",
+    updates_ask: "Beri tahu saya bila ada versi baru?",
+    updates_ask_hint: "Switcher akan bertanya ke github.com saat mulai dan tiap 6 jam. Tidak ada data akun Anda yang dikirim. Bisa diubah kapan saja di bawah.",
+    updates_yes: "Ya, beri tahu",
+    updates_no: "Tidak",
+    updates_toggle: "Cek versi baru",
 
     "err.uac_cancelled": "Dibatalkan. Tidak ada yang berubah.",
     "err.update_failed": "Pembaruan gagal. Coba lagi nanti; versi ini tetap jalan.",
@@ -179,6 +184,11 @@ window.STRINGS_BY_LANG = {
     update_notes: "What's new",
     update_go: "Update",
     update_downloading: "Downloading the update… {p}%",
+    updates_ask: "Tell me when a new version is out?",
+    updates_ask_hint: "Switcher will ask github.com when it starts and every 6 hours. No data about your accounts is sent. You can change this below at any time.",
+    updates_yes: "Yes, tell me",
+    updates_no: "No",
+    updates_toggle: "Check for new versions",
 
     "err.uac_cancelled": "Cancelled. Nothing changed.",
     "err.update_failed": "The update failed. Try again later; this version keeps running.",

@@ -32,6 +32,8 @@
     lang: params.get("lang") || "id",
     total_ram: Math.round(23.69 * GB),
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
+    // ?updates=unasked|on|off|unavailable (default: on with ?update, else off)
+    update_checks: params.get("updates") || (params.has("update") ? "on" : "off"),
     recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
@@ -62,6 +64,7 @@
       if (params.get("update") === "fail") throw { code: "Io", message_id: "err.update_failed", detail: "signature" };
     },
     async open_update_notes() {},
+    async set_update_checks({ enabled }) { settings.update_checks = enabled ? "on" : "off"; },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {
       const a = find(id);

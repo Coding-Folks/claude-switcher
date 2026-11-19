@@ -28,6 +28,7 @@
     renderRam(running);
     renderAccounts();
     $("autostart").checked = !!settings.autostart;
+    renderUpdateChecks(settings.update_checks);
     fitWindow();
   }
 
@@ -385,6 +386,26 @@
     catch (err) { updating = false; renderUpdate(); showError(err); }
   });
   $("update-notes").addEventListener("click", () => invoke("open_update_notes").catch(showError));
+
+  // Checks only with consent: asked once (#updates-ask), then the footer toggle.
+  function renderUpdateChecks(mode) {
+    const available = mode && mode !== "unavailable";
+    $("updates-ask").hidden = mode !== "unasked";
+    $("updates-switch").hidden = !available || mode === "unasked";
+    $("updates").checked = mode === "on";
+  }
+  async function setUpdateChecks(on, focusAfter) {
+    try {
+      await invoke("set_update_checks", { enabled: on });
+      settings.update_checks = on ? "on" : "off";
+      if (!on) { update = null; renderUpdate(); }
+      renderUpdateChecks(settings.update_checks);
+      if (focusAfter) $("updates").focus(); // the question is gone; its answer lives on in the toggle
+    } catch (err) { renderUpdateChecks(settings.update_checks); showError(err); }
+  }
+  $("updates-yes").addEventListener("click", () => setUpdateChecks(true, true));
+  $("updates-no").addEventListener("click", () => setUpdateChecks(false, true));
+  $("updates").addEventListener("change", (e) => setUpdateChecks(e.target.checked, false));
 
   // ---------- search ----------
   $("search").addEventListener("input", () => renderAccounts());

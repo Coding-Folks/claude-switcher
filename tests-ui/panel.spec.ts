@@ -55,6 +55,8 @@ test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus 
   await ready(page);
   await page.locator('#autostart').focus();
   await page.keyboard.press('Tab');
+  await expect(page.locator('#updates')).toBeFocused(); // the update-checks toggle
+  await page.keyboard.press('Tab');
   await expect(page.locator('#lang')).toBeFocused(); // the language picker is the last control
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Tampilkan Utama' })).toBeFocused();
@@ -687,4 +689,37 @@ test('renaming the focused account out of the search keeps focus in the panel (o
   await page.locator('#confirm-ok').click();
   await expect(page.locator('.account')).toHaveCount(1);
   await expect(page.getByRole('searchbox', { name: 'Cari akun' })).toBeFocused();
+});
+
+// ---- Update checks only with the user's consent: asked once, then a toggle ----
+
+test('asks once whether to check for new versions; Ya turns the toggle on', async ({ page }) => {
+  await ready(page, '&updates=unasked');
+  const ask = page.locator('#updates-ask');
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText('Beri tahu saya bila ada versi baru?');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  await ask.getByRole('button', { name: 'Ya, beri tahu' }).click();
+  await expect(ask).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeChecked();
+});
+
+test('Tidak hides the question and leaves the toggle off', async ({ page }) => {
+  await ready(page, '&updates=unasked');
+  await page.locator('#updates-ask').getByRole('button', { name: 'Tidak' }).click();
+  await expect(page.locator('#updates-ask')).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).not.toBeChecked();
+});
+
+test('no question and no toggle when this build has no update key', async ({ page }) => {
+  await ready(page, '&updates=unavailable');
+  await expect(page.locator('#updates-ask')).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeHidden();
+});
+
+test('turning the checks off hides an offered update', async ({ page }) => {
+  await ready(page, '&update=1');
+  await expect(page.locator('#update')).toBeVisible();
+  await page.getByRole('switch', { name: 'Cek versi baru' }).click();
+  await expect(page.locator('#update')).toBeHidden();
 });

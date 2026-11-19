@@ -33,6 +33,8 @@ pub struct Settings {
     total_ram: u64,
     recovered_backup: Option<String>,
     lang: crate::i18n::Lang,
+    /// "unavailable" | "unasked" | "on" | "off"
+    update_checks: &'static str,
 }
 
 #[derive(Clone, Serialize)]
@@ -190,6 +192,7 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
         total_ram: snap.total_ram,
         recovered_backup,
         lang: crate::i18n::current(),
+        update_checks: crate::update::checks_setting(&app),
     })
 }
 
@@ -249,4 +252,11 @@ pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> AppRe
 #[tauri::command]
 pub fn open_update_notes(app: AppHandle) -> AppResult<()> {
     crate::update::open_notes(&app)
+}
+
+#[tauri::command]
+pub fn set_update_checks(app: AppHandle, enabled: bool) -> AppResult<()> {
+    crate::update::set_consent(&app, enabled)?;
+    refresh(&app);
+    Ok(())
 }

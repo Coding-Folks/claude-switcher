@@ -46,6 +46,12 @@ Pengguna memilih A untuk update dan A untuk dropdown.
 
 ## Desain
 
+> **Tambahan setelah review (2026-11-20).** Pengecekan otomatis bertentangan dengan pernyataan privasi
+> SignPath Foundation ("tidak mengirim informasi kecuali diminta pengguna"). Keputusan pengguna:
+> **tanya sekali, lalu toggle.** Sebelum dijawab tidak ada pengecekan; kartu "Beri tahu saya bila ada
+> versi baru?" [Tidak] [Ya, beri tahu]; sesudahnya toggle "Cek versi baru" di footer. Jawaban di
+> `%APPDATA%\ClaudeSwitcher\updates.txt`. Mematikan toggle menyembunyikan update yang sedang ditawarkan.
+
 ### 1. Update
 
 **Kunci.** Pengguna membuat pasangan kunci sekali: `cargo tauri signer generate -w ~/.tauri/claude-switcher.key`.

@@ -102,7 +102,9 @@ pub fn run() {
         None => builder,
     };
     builder
-        .manage(update::UpdateState::default())
+        .manage(update::UpdateState::new(update::Consent::load(
+            &update::consent_file(),
+        )))
         .manage(AppState {
             flows,
             busy: busy.clone(),
@@ -123,6 +125,7 @@ pub fn run() {
             commands::get_update,
             commands::install_update,
             commands::open_update_notes,
+            commands::set_update_checks,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

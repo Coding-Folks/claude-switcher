@@ -88,7 +88,9 @@ and only reads or writes `<uuid>.secret` / `<uuid>.result.json` files directly i
 
 ## Updates
 
-When the build carries an update key (`src-tauri/updater.pub`), the app fetches
+When the build carries an update key (`src-tauri/updater.pub`) **and the user agreed** (the panel asks
+once, "Beri tahu saya bila ada versi baru?", then offers a toggle; the answer is kept in
+`%APPDATA%\ClaudeSwitcher\updates.txt`), the app fetches
 `https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json` 10 seconds after
 it starts and every 6 hours (30 s timeout). That is its only network request: an ordinary HTTPS
 request that carries no data about the user, only the IP address and the app's name and version any
@@ -115,6 +117,7 @@ which the app restarts. How releases are signed: [CODE-SIGNING.md](CODE-SIGNING.
 | `%LOCALAPPDATA%\ClaudeSwitcher\slots\` | Mode 1 accounts |
 | `%LOCALAPPDATA%\ClaudeSwitcher\tmp\`, `bootstrap\` | Short-lived files for the admin helper and first start |
 | Windows Credential Manager `ClaudeSwitcher/*` | Mode 2 passwords |
+| `%APPDATA%\ClaudeSwitcher\updates.txt` | Whether update checks are allowed (`on`/`off`; missing = not asked yet) |
 | `%PUBLIC%\ClaudeSwitcher\icons\` | Each account's recoloured icon (here because the Windows 11 taskbar cannot read icons inside a user folder) |
 | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Claude Switcher\` | "Claude – <name>" shortcut per account |
 | `HKCU\Software\Classes\claude` | `claude://` handler, so a Google sign-in returns to the account that started it |
