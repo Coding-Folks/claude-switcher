@@ -55,9 +55,13 @@ test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus 
   await ready(page);
   await page.locator('#autostart').focus();
   await page.keyboard.press('Tab');
+  await expect(page.locator('#updates')).toBeFocused(); // the update-checks toggle
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#lang')).toBeFocused(); // the language picker is the last control
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Tampilkan Utama' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.locator('#autostart')).toBeFocused();
+  await expect(page.locator('#lang')).toBeFocused();
 });
 
 test('the keyboard shortcut that opens the panel is stated in it', async ({ page }) => {
@@ -343,21 +347,23 @@ test('switching language redraws the panel, renames a default Main and keeps foc
   await expect(row(page, 'Utama')).toBeVisible();
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.focus();
-  await picker.selectOption('en');
+  await picker.press('Enter');
+  await page.getByRole('option', { name: 'English' }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Claude accounts');
   await expect(row(page, 'Main')).toBeVisible();
   await expect(page.locator('#count')).toHaveText('2 running');
-  await page.getByRole('combobox', { name: 'Language' }).selectOption('id');
+  await page.getByRole('combobox', { name: 'Language' }).click();
+  await page.getByRole('option', { name: 'Bahasa Indonesia' }).click();
   await expect(row(page, 'Utama')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Akun Claude');
 });
 
 test('language names are marked with their own language', async ({ page }) => {
   await ready(page);
-  await expect(page.locator('#lang option[value="en"]')).toHaveAttribute('lang', 'en');
-  await expect(page.locator('#lang option[value="id"]')).toHaveAttribute('lang', 'id');
+  await expect(page.locator('#lang-list [role="option"][data-value="en"]')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#lang-list [role="option"][data-value="id"]')).toHaveAttribute('lang', 'id');
 });
 
 test('English: 200% text zoom does not clip labels', async ({ page }) => {
@@ -453,4 +459,267 @@ test('the stopped dot and the "other" RAM colour stay visible on light surfaces 
     const c = getComputedStyle(d).color; d.remove(); return c;
   });
   expect(contrast(other, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
+});
+
+// ---- Components like the landing page (docs/design/update-and-panel-polish.md) ----
+
+test('buttons are pills of the landing page sizes', async ({ page }) => {
+  await ready(page);
+  for (const b of await page.locator('.primary:visible, .secondary:visible').all()) {
+    const r = await b.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+    expect(r, await b.evaluate((e) => e.outerHTML.slice(0, 60))).toBeGreaterThanOrEqual(18);
+  }
+  expect((await page.locator('#add-open').boundingBox())!.height).toBe(44);
+  expect((await page.getByRole('button', { name: 'Buka Klien' }).boundingBox())!.height).toBe(36);
+});
+
+test('text inputs are 44 px with a focus ring', async ({ page }) => {
+  await ready(page);
+  await page.locator('#add-open').click();
+  const input = page.locator('#add-label');
+  await input.focus();
+  await page.waitForTimeout(250); // the 150 ms focus transition
+  expect((await input.boundingBox())!.height).toBe(44);
+  const shadow = await input.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(shadow).toContain('rgb(231, 240, 255)');
+});
+
+test('autostart is a pill toggle', async ({ page }) => {
+  await ready(page);
+  const t = page.locator('#autostart');
+  const box = (await t.boundingBox())!;
+  expect([box.width, box.height]).toEqual([40, 24]);
+  expect(await t.evaluate((el) => getComputedStyle(el).appearance)).toBe('none');
+  if (!(await t.isChecked())) await t.click();
+  await page.waitForTimeout(250); // the 150 ms colour transition
+  expect(await t.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(13, 106, 255)');
+});
+
+test('the RAM track differs from the panel ground in light mode', async ({ page }) => {
+  await ready(page);
+  const [track, ground] = await page.evaluate(() => [
+    getComputedStyle(document.querySelector('.strip')!).backgroundColor,
+    getComputedStyle(document.body).backgroundColor,
+  ]);
+  expect(track).not.toBe(ground);
+  expect(track).toBe('rgb(209, 211, 216)');
+});
+
+// ---- Language picker like the landing page Select (APG select-only combobox) ----
+
+test('language picker opens with Enter, arrows move, Esc closes and keeps the language', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await expect(picker).toHaveAttribute('aria-expanded', 'true');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-id');
+  await page.keyboard.press('ArrowDown');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-en');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toBeHidden();
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(picker).toBeFocused();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+});
+
+test('typing a letter jumps to that language, Enter chooses it', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('e');
+  await expect(picker).toHaveAttribute('aria-activedescendant', 'lang-opt-en');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
+  await expect(page.getByRole('combobox', { name: 'Language' })).toContainText('English');
+});
+
+test('the chosen language is the selected option', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('combobox', { name: 'Bahasa' }).click();
+  await expect(page.getByRole('option', { name: 'Bahasa Indonesia' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('option', { name: 'English' })).toHaveAttribute('aria-selected', 'false');
+});
+
+test('axe AA with the language list open', async ({ page }) => {
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await ready(page);
+    await page.getByRole('combobox', { name: 'Bahasa' }).click();
+    expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  }
+});
+
+test('the language list stays inside the window and closes on an outside click', async ({ page }) => {
+  await ready(page);
+  const picker = page.getByRole('combobox', { name: 'Bahasa' });
+  await picker.scrollIntoViewIfNeeded();
+  await picker.click();
+  const list = (await page.getByRole('listbox').boundingBox())!;
+  const h = await page.evaluate(() => window.innerHeight);
+  expect(list.y).toBeGreaterThanOrEqual(0);
+  expect(list.y + list.height).toBeLessThanOrEqual(h);
+  await page.locator('h1').click();
+  await expect(page.getByRole('listbox')).toBeHidden();
+});
+
+// ---- Many accounts: the list scrolls, search above eight ----
+
+async function readyMany(page: Page) {
+  await page.goto(PANEL + '&many=12');
+  await expect(page.locator('.account')).toHaveCount(12);
+}
+
+test('twelve accounts: the list scrolls and the panel does not grow', async ({ page }) => {
+  await ready(page);
+  const five = await page.evaluate(() => document.querySelector('.panel')!.scrollHeight);
+  await readyMany(page);
+  const twelve = await page.evaluate(() => document.querySelector('.panel')!.scrollHeight);
+  expect(twelve).toBeLessThanOrEqual(five + 120); // capped list + the search field
+  const [sh, ch] = await page.locator('#accounts').evaluate((el) => [el.scrollHeight, el.clientHeight]);
+  expect(sh).toBeGreaterThan(ch);
+});
+
+test('arrow keys reach the last account and scroll it into view', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('button', { name: 'Tampilkan Utama' }).focus();
+  for (let i = 0; i < 11; i++) await page.keyboard.press('ArrowDown');
+  const last = page.locator('.account').last().locator('[data-role="primary"]');
+  await expect(last).toBeFocused();
+  const [btn, list] = [await last.boundingBox(), await page.locator('#accounts').boundingBox()];
+  expect(btn!.y + btn!.height).toBeLessThanOrEqual(list!.y + list!.height + 1);
+});
+
+test('no search with five accounts', async ({ page }) => {
+  await ready(page);
+  await expect(page.getByRole('searchbox')).toBeHidden();
+});
+
+test('search appears above eight accounts and filters by name, ignoring case', async ({ page }) => {
+  await readyMany(page);
+  const search = page.getByRole('searchbox', { name: 'Cari akun' });
+  await search.fill('klien');
+  await expect(page.locator('.account')).toHaveCount(3);
+  await search.fill('zzz');
+  await expect(page.locator('.account')).toHaveCount(0);
+  await expect(page.locator('#no-match')).toHaveText('Tidak ada akun bernama “zzz”.');
+});
+
+test('Esc in the search clears it and keeps the panel open', async ({ page }) => {
+  await readyMany(page);
+  const search = page.getByRole('searchbox', { name: 'Cari akun' });
+  await search.fill('tim');
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(page.locator('.account')).toHaveCount(12);
+  await expect(search).toBeFocused();
+});
+
+test('renaming while filtered applies the filter again', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('tim');
+  await expect(page.locator('.account')).toHaveCount(2);
+  await row(page, 'Tim Data').getByRole('button', { name: 'Opsi untuk Tim Data' }).click();
+  await page.getByRole('menuitem', { name: 'Ganti nama' }).click();
+  await page.locator('#confirm-input').fill('Keuangan Dua');
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('.account')).toHaveCount(1);
+});
+
+test('axe AA with twelve accounts and a search', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('klien');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+// ---- Update from GitHub ----
+
+test('no update row without an update', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#update')).toBeHidden();
+});
+
+test('the update row shows the version and Perbarui', async ({ page }) => {
+  await ready(page, '&update=1');
+  const row = page.locator('#update');
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('Versi 0.3.0 tersedia');
+  await expect(row.getByRole('button', { name: 'Perbarui' })).toBeEnabled();
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('Perbarui shows the download progress and disables the button', async ({ page }) => {
+  await ready(page, '&update=1');
+  const button = page.locator('#update').getByRole('button', { name: 'Perbarui' });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(page.locator('#update-msg')).toContainText('Mengunduh pembaruan…');
+  await expect(page.locator('#update-msg')).toContainText('100%');
+});
+
+test('a failed update says so and keeps the row', async ({ page }) => {
+  await ready(page, '&update=fail');
+  await page.locator('#update').getByRole('button', { name: 'Perbarui' }).click();
+  await expect(page.locator('#alert')).toContainText('Pembaruan gagal');
+  await expect(page.locator('#update')).toBeVisible();
+  await expect(page.locator('#update').getByRole('button', { name: 'Perbarui' })).toBeEnabled();
+  await expect(page.locator('#update-msg')).toContainText('Versi 0.3.0 tersedia');
+});
+
+// ---- Fixes from the final review ----
+
+test('forced-colors: a focused text field shows a focus outline', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await ready(page);
+  await page.locator('#add-open').click();
+  await page.locator('#add-label').focus();
+  const style = await page.locator('#add-label').evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(style).not.toBe('none');
+});
+
+test('renaming the focused account out of the search keeps focus in the panel (on the search)', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('tim');
+  await row(page, 'Tim Data').getByRole('button', { name: 'Opsi untuk Tim Data' }).click();
+  await page.getByRole('menuitem', { name: 'Ganti nama' }).click();
+  await page.locator('#confirm-input').fill('Keuangan Dua');
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('.account')).toHaveCount(1);
+  await expect(page.getByRole('searchbox', { name: 'Cari akun' })).toBeFocused();
+});
+
+// ---- Update checks only with the user's consent: asked once, then a toggle ----
+
+test('asks once whether to check for new versions; Ya turns the toggle on', async ({ page }) => {
+  await ready(page, '&updates=unasked');
+  const ask = page.locator('#updates-ask');
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText('Beri tahu saya bila ada versi baru?');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  await ask.getByRole('button', { name: 'Ya, beri tahu' }).click();
+  await expect(ask).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeChecked();
+});
+
+test('Tidak hides the question and leaves the toggle off', async ({ page }) => {
+  await ready(page, '&updates=unasked');
+  await page.locator('#updates-ask').getByRole('button', { name: 'Tidak' }).click();
+  await expect(page.locator('#updates-ask')).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).not.toBeChecked();
+});
+
+test('no question and no toggle when this build has no update key', async ({ page }) => {
+  await ready(page, '&updates=unavailable');
+  await expect(page.locator('#updates-ask')).toBeHidden();
+  await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeHidden();
+});
+
+test('turning the checks off hides an offered update', async ({ page }) => {
+  await ready(page, '&update=1');
+  await expect(page.locator('#update')).toBeVisible();
+  await page.getByRole('switch', { name: 'Cek versi baru' }).click();
+  await expect(page.locator('#update')).toBeHidden();
 });

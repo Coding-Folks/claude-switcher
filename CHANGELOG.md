@@ -18,7 +18,19 @@ and the project uses [Semantic Versioning](https://semver.org/).
   that account, and a "Claude – <name>" shortcut appears in the Start Menu under Claude Switcher.
   Main keeps Claude's own button, so existing pins are untouched.
 
+- Updates from GitHub, only with your consent (asked once, then **Check for new versions** in the
+  footer): the panel says when a newer version is out, and **Perbarui** downloads it,
+  checks its signature, asks for UAC once and restarts into it. Nothing installs on its own. Needs the
+  one-time update key setup in `docs/CODE-SIGNING.md#updates`; until then the check is off.
+- Many accounts: the account list scrolls after about six rows instead of growing the panel, and a
+  search field appears above eight accounts.
+
 ### Changed
+
+- Panel controls follow the landing page components: pill buttons (36 and 44 px), 44 px inputs with
+  the brand focus ring, a language picker with its own popover, and a pill toggle for **Start with
+  Windows**. Spacing is on a 4 px grid, and the empty part of the RAM bar is visible again in light
+  mode.
 
 - The panel, app icon and social preview follow the Coding Folks brand kit: Instrument Sans with IBM
   Plex Mono for numbers (bundled, never downloaded), the brand blue on the main button, the kit's

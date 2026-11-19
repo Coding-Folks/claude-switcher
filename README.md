@@ -101,10 +101,23 @@ Details, folder layout and the findings behind both modes: [docs/HOW-IT-WORKS.md
   Manager**, never written to disk or logs.
 - The admin helper accepts just four fixed operations on names that match `claude-*`, and only reads
   or writes files in its own exchange folder.
-- Nothing is sent anywhere: the app has no telemetry and makes no network requests of its own.
+- No telemetry. The only network request is the update check, and only if you agree to it: the panel
+  asks once (**Tell me when a new version is out?**) and **Check for new versions** in the footer turns
+  it on or off. Then the app asks github.com for `latest.json` of the newest release when it starts and
+  every 6 hours (the download itself comes from GitHub's `objects.githubusercontent.com`). It carries no data
+  about you or your accounts, only what any HTTPS request reveals (your IP address and the app's name
+  and version). An update installs only when you press **Update**, and only if its signature matches
+  the key built into the app.
 
 Found a vulnerability? Please see [SECURITY.md](SECURITY.md). How releases are built and signed:
 [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
+
+## Updates
+
+If you let the app check (it asks once; the footer toggle changes it) and a newer release is out, the
+panel shows **Version x.y.z is available** with **Update**. Pressing it
+downloads the installer, checks its signature, asks for admin approval once (UAC) and reopens the app
+in the new version. Nothing installs on its own. **What's new** opens the release page.
 
 ## Limitations
 

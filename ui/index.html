@@ -21,16 +21,38 @@
       <p class="count num" id="count"></p>
     </header>
 
+    <section class="update ask" id="updates-ask" aria-labelledby="updates-ask-title" hidden>
+      <div class="update-text">
+        <h2 id="updates-ask-title" data-s="updates_ask"></h2>
+        <p class="hint" data-s="updates_ask_hint"></p>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="secondary" id="updates-no" data-s="updates_no"></button>
+        <button type="button" class="primary" id="updates-yes" data-s="updates_yes"></button>
+      </div>
+    </section>
+
+    <div class="update" id="update" hidden>
+      <p class="update-text"><span id="update-msg" aria-live="polite"></span>
+        <button type="button" class="link" id="update-notes" data-s="update_notes"></button></p>
+      <button type="button" class="primary" id="update-go" data-s="update_go"></button>
+    </div>
+
     <section class="ram" aria-labelledby="ram-finding">
       <p class="finding" id="ram-finding"></p>
       <div class="strip" id="ram-strip" role="img"></div>
       <ul class="legend" id="ram-legend"></ul>
     </section>
 
+    <div class="search" id="search-box" hidden>
+      <label for="search" class="visually-hidden" data-s="search_label"></label>
+      <input id="search" type="search" autocomplete="off" spellcheck="false" maxlength="40" data-ph="search_label">
+    </div>
     <ul class="accounts" id="accounts" aria-labelledby="title"></ul>
+    <p class="hint" id="no-match" role="status" hidden></p>
 
     <div class="add">
-      <button type="button" class="primary" id="add-open" data-s="add_account" aria-expanded="false" aria-controls="add-form"></button>
+      <button type="button" class="primary md" id="add-open" data-s="add_account" aria-expanded="false" aria-controls="add-form"></button>
       <form id="add-form" class="add-form" hidden novalidate>
         <label for="add-label" data-s="add_label"></label>
         <input id="add-label" name="label" type="text" maxlength="40" autocomplete="off" aria-describedby="add-hint add-error">
@@ -50,8 +72,8 @@
         </fieldset>
         <p class="field-error" id="add-error" role="alert"></p>
         <div class="row-actions">
-          <button type="button" class="secondary" id="add-cancel" data-s="cancel"></button>
-          <button type="submit" class="primary" id="add-submit" data-s="add_submit"></button>
+          <button type="button" class="secondary md" id="add-cancel" data-s="cancel"></button>
+          <button type="submit" class="primary md" id="add-submit" data-s="add_submit"></button>
         </div>
       </form>
     </div>
@@ -61,10 +83,18 @@
         <input type="checkbox" id="autostart" role="switch">
         <span data-s="autostart"></span>
       </label>
-      <label class="lang" for="lang">
-        <span data-s="language"></span>
-        <select id="lang"></select>
+      <label class="switch" id="updates-switch" hidden>
+        <input type="checkbox" id="updates" role="switch">
+        <span data-s="updates_toggle"></span>
       </label>
+      <div class="lang">
+        <span id="lang-label" data-s="language"></span>
+        <div class="picker">
+          <button type="button" id="lang" role="combobox" aria-labelledby="lang-label" aria-haspopup="listbox"
+                  aria-expanded="false" aria-controls="lang-list"><span id="lang-value"></span><svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <ul id="lang-list" role="listbox" aria-labelledby="lang-label" hidden></ul>
+        </div>
+      </div>
       <p class="hint" data-s="shortcut_hint"></p>
       <p class="byline"><span data-s="byline_by"></span> <b lang="en">Coding Folks</b></p>
     </footer>

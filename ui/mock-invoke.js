@@ -12,6 +12,13 @@
     { account: { id: "a-riset", label: "Riset", kind: "windows_user", windows_user: "claude-riset", created_at: "2026-11-12T10:05:00Z" }, state: "Problem", bytes: null },
     { account: { id: "a-slotb", label: "Slot B", kind: "same_user", windows_user: null, created_at: "2026-11-12T11:00:00Z", data_root: "C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/a-slotb/Local" }, state: params.get("slot") === "unsupported" ? "Problem" : "Stopped", bytes: null },
   ];
+  // ?many=12: twelve accounts, for the scrolling list and the search.
+  const many = Number(params.get("many")) || 0;
+  const extra = ["Tim Desain", "Tim Data", "Keuangan", "Hukum", "Riset Pasar", "Klien Beta", "Klien Gamma"];
+  for (let i = 0; accounts.length < many && i < extra.length; i++) {
+    const id = "a-x" + i;
+    accounts.push({ account: { id, label: extra[i], kind: "same_user", windows_user: null, created_at: "2026-11-13T08:00:00Z", data_root: `C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/${id}/Local` }, state: "Stopped", bytes: null });
+  }
   // English sample names for ?lang=en (README screenshots); the Indonesian ones are what the tests use.
   if (params.get("lang") === "en") {
     const en = { Utama: "Main", Kantor: "Work", Klien: "Client", Riset: "Research" };
@@ -25,6 +32,8 @@
     lang: params.get("lang") || "id",
     total_ram: Math.round(23.69 * GB),
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
+    // ?updates=unasked|on|off|unavailable (default: on with ?update, else off)
+    update_checks: params.get("updates") || (params.has("update") ? "on" : "off"),
     recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
@@ -46,6 +55,16 @@
       if (["Utama", "Main"].includes(main.account.label)) main.account.label = lang === "id" ? "Utama" : "Main";
       emit("status");
     },
+    // ?update=1: version 0.3.0 is out; ?update=fail: installing it fails.
+    async get_update() {
+      return params.has("update") ? { version: "0.3.0", notes_url: "https://github.com/Coding-Folks/claude-switcher/releases/tag/v0.3.0" } : null;
+    },
+    async install_update() {
+      for (const percent of [10, 45, 80, 100]) { await wait(60); emit("update-progress", { percent }); }
+      if (params.get("update") === "fail") throw { code: "Io", message_id: "err.update_failed", detail: "signature" };
+    },
+    async open_update_notes() {},
+    async set_update_checks({ enabled }) { settings.update_checks = enabled ? "on" : "off"; },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {
       const a = find(id);

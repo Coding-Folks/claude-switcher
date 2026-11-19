@@ -33,6 +33,8 @@ pub struct Settings {
     total_ram: u64,
     recovered_backup: Option<String>,
     lang: crate::i18n::Lang,
+    /// "unavailable" | "unasked" | "on" | "off"
+    update_checks: &'static str,
 }
 
 #[derive(Clone, Serialize)]
@@ -190,6 +192,7 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
         total_ram: snap.total_ram,
         recovered_backup,
         lang: crate::i18n::current(),
+        update_checks: crate::update::checks_setting(&app),
     })
 }
 
@@ -224,4 +227,36 @@ pub fn hide_panel(app: AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
         let _ = w.hide();
     }
+}
+
+#[tauri::command]
+pub fn get_update(app: AppHandle) -> Option<crate::update::UpdateInfo> {
+    crate::update::current(&app)
+}
+
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    // Busy keeps the panel open while the UAC prompt has the focus.
+    state.busy.fetch_add(1, Ordering::SeqCst);
+    let out = crate::update::install(&app).await;
+    state.busy.fetch_sub(1, Ordering::SeqCst);
+    if let Err(e) = &out {
+        crate::applog::error(
+            "update failed",
+            &[("detail", e.detail.as_deref().unwrap_or(""))],
+        );
+    }
+    out
+}
+
+#[tauri::command]
+pub fn open_update_notes(app: AppHandle) -> AppResult<()> {
+    crate::update::open_notes(&app)
+}
+
+#[tauri::command]
+pub fn set_update_checks(app: AppHandle, enabled: bool) -> AppResult<()> {
+    crate::update::set_consent(&app, enabled)?;
+    refresh(&app);
+    Ok(())
 }

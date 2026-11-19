@@ -16,6 +16,7 @@ pub mod slot;
 pub mod store;
 pub mod taskbar;
 pub mod tray;
+pub mod update;
 pub mod vault;
 pub mod winuser;
 
@@ -75,7 +76,7 @@ pub fn run() {
     let busy = Arc::new(AtomicUsize::new(0));
     let install_dir = flows.as_ref().ok().map(|f| f.platform().install_dir());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
             |app, args, _cwd| match taskbar::launch_arg(&args) {
                 Some(id) => launch_account(app, id),
@@ -94,7 +95,16 @@ pub fn run() {
                     }
                 })
                 .build(),
-        )
+        );
+    // Updates only when this build carries a signing key (src-tauri/updater.pub).
+    let builder = match update::pubkey() {
+        Some(key) => builder.plugin(tauri_plugin_updater::Builder::new().pubkey(key).build()),
+        None => builder,
+    };
+    builder
+        .manage(update::UpdateState::new(update::Consent::load(
+            &update::consent_file(),
+        )))
         .manage(AppState {
             flows,
             busy: busy.clone(),
@@ -112,6 +122,10 @@ pub fn run() {
             commands::set_autostart,
             commands::set_language,
             commands::hide_panel,
+            commands::get_update,
+            commands::install_update,
+            commands::open_update_notes,
+            commands::set_update_checks,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -175,6 +189,10 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_secs(2));
                     }
                 });
+            }
+            if update::pubkey().is_some() {
+                let h = handle.clone();
+                update::spawn_checks(handle.clone(), move || commands::refresh(&h));
             }
             if let Some(id) = taskbar::launch_arg(&std::env::args().collect::<Vec<_>>()) {
                 launch_account(&handle, id); // started by a pinned button or shortcut
