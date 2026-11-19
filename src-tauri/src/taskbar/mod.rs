@@ -52,13 +52,32 @@ pub fn stale(existing: &[String], wanted: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// `<Public>\ClaudeSwitcher\icons\<user>`: the Windows 11 taskbar reads button icons from a sandboxed
+/// process that cannot see the user's own folders, so icons live under Public, one folder per Windows
+/// user so that two people on one PC never sweep each other's icons.
+pub fn icons_dir_for(public: &Path, user: &str) -> PathBuf {
+    public.join("ClaudeSwitcher").join("icons").join(user)
+}
+
 fn icons_dir() -> PathBuf {
-    // The Windows 11 taskbar reads button icons from a sandboxed process that cannot see the user's
-    // own folders, so icons live under Public.
-    std::env::var_os("PUBLIC")
+    let public = std::env::var_os("PUBLIC")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(r"C:\Users\Public"))
-        .join(r"ClaudeSwitcher\icons")
+        .unwrap_or_else(|| PathBuf::from(r"C:\Users\Public"));
+    icons_dir_for(&public, &std::env::var("USERNAME").unwrap_or_default())
+}
+
+/// What a window was given by this run of Claude Switcher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stamp {
+    pub aumid: String,
+    pub name: String,
+    pub icon: PathBuf,
+}
+
+/// A window is stamped when this run has not stamped it yet (its icon handle may have died with an
+/// earlier Switcher process, even though the AUMID is still on it) or when its name or icon changed.
+pub fn needs_stamp(had: Option<&Stamp>, want: &Stamp) -> bool {
+    had != Some(want)
 }
 
 fn shortcuts_dir() -> Option<PathBuf> {
@@ -81,8 +100,12 @@ fn file_names(dir: &Path) -> Vec<String> {
 pub struct TickState {
     /// Shortcuts written this session, with the icon they point at (rewritten when it changes).
     written: HashMap<PathBuf, PathBuf>,
+    /// Windows stamped by this run, with what they were given.
+    stamped: HashMap<isize, Stamp>,
     /// Windows we could not stamp, logged once each.
     failed: HashSet<(isize, String)>,
+    /// Accounts whose icon could not be made, logged once each.
+    icon_failed: HashSet<String>,
     /// Claude's logo was missing (logged once).
     no_logo: bool,
 }
@@ -111,12 +134,24 @@ pub fn tick(flows: &Flows<WinPlatform>, exe: &Path, st: &mut TickState) {
             Ok(p) => {
                 icon_of.insert(a.id.clone(), p);
             }
-            Err(e) => {
+            Err(e) if e.code == crate::error::ErrorCode::NotFound => {
                 if !st.no_logo {
-                    applog::error("taskbar: no icon", &[("detail", &format!("{e:?}"))]);
+                    applog::error(
+                        "taskbar: Claude's logo not found",
+                        &[("detail", &format!("{e:?}"))],
+                    );
                     st.no_logo = true;
                 }
                 return; // no logo (Claude missing or changed): leave the taskbar alone
+            }
+            Err(e) => {
+                // Only this account goes without; the others carry on.
+                if st.icon_failed.insert(a.id.clone()) {
+                    applog::error(
+                        "taskbar: icon not made",
+                        &[("account", &a.id), ("detail", &format!("{e:?}"))],
+                    );
+                }
             }
         }
     }
@@ -156,32 +191,46 @@ pub fn tick(flows: &Flows<WinPlatform>, exe: &Path, st: &mut TickState) {
         let _ = std::fs::remove_file(icons.join(f)); // an icon still in use by a window stays locked; next tick
     }
 
+    let mut seen: HashSet<isize> = HashSet::new();
     for (a, pid) in flows.running_roots() {
         let Some(icon) = icon_of.get(&a.id) else {
             continue;
         };
-        let want = shell::aumid(&a.id);
+        let want = Stamp {
+            aumid: shell::aumid(&a.id),
+            name: shell::display_name(&a.label),
+            icon: icon.clone(),
+        };
         for hwnd in shell::top_windows_of(pid) {
-            if shell::window_aumid(hwnd).as_deref() == Some(want.as_str()) {
+            seen.insert(hwnd);
+            if !needs_stamp(st.stamped.get(&hwnd), &want) {
                 continue;
             }
             let res = shell::stamp(
                 hwnd,
-                &want,
+                &want.aumid,
                 &shell::relaunch_command(exe, &a.id),
-                &shell::display_name(&a.label),
+                &want.name,
                 icon,
             );
-            if let Err(e) = res {
-                if st.failed.insert((hwnd, a.id.clone())) {
-                    applog::error(
-                        "taskbar: window not stamped",
-                        &[("account", &a.id), ("detail", &format!("{e:?}"))],
-                    );
+            match res {
+                Ok(()) => {
+                    st.stamped.insert(hwnd, want.clone());
+                }
+                Err(e) => {
+                    if st.failed.insert((hwnd, a.id.clone())) {
+                        applog::error(
+                            "taskbar: window not stamped",
+                            &[("account", &a.id), ("detail", &format!("{e:?}"))],
+                        );
+                    }
                 }
             }
         }
     }
+    // Closed windows: forget them (a new window may reuse the handle).
+    st.stamped.retain(|h, _| seen.contains(h));
+    st.failed.retain(|(h, _)| seen.contains(h));
 }
 
 #[cfg(test)]
@@ -232,6 +281,36 @@ mod tests {
     fn stale_ignores_case_like_windows() {
         let existing = strings(&["claude – a.lnk"]);
         assert!(stale(&existing, &strings(&["Claude – A.lnk"])).is_empty());
+    }
+
+    fn stamp_of(label: &str, icon: &str) -> Stamp {
+        Stamp {
+            aumid: "A".into(),
+            name: shell::display_name(label),
+            icon: PathBuf::from(icon),
+        }
+    }
+
+    #[test]
+    fn a_window_not_stamped_by_this_run_is_stamped_even_if_its_aumid_matches() {
+        // After a restart the window keeps the AUMID, but its icon handle died with the old process.
+        assert!(needs_stamp(None, &stamp_of("Kerja", "a.ico")));
+    }
+
+    #[test]
+    fn a_window_is_stamped_again_after_a_rename_or_a_new_icon_only() {
+        let had = stamp_of("Kerja", "a.ico");
+        assert!(!needs_stamp(Some(&had), &stamp_of("Kerja", "a.ico")));
+        assert!(needs_stamp(Some(&had), &stamp_of("Kantor", "a.ico")));
+        assert!(needs_stamp(Some(&had), &stamp_of("Kerja", "b.ico")));
+    }
+
+    #[test]
+    fn icons_are_kept_per_windows_user_under_public() {
+        assert_eq!(
+            icons_dir_for(Path::new(r"C:\Users\Public"), "alice"),
+            PathBuf::from(r"C:\Users\Public\ClaudeSwitcher\icons\alice")
+        );
     }
 
     #[test]

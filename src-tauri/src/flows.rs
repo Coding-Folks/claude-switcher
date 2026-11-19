@@ -226,10 +226,19 @@ impl<P: Platform> Flows<P> {
         let mut list = self.accounts()?;
         let mut changed = false;
         for i in 0..list.len() {
-            if list[i].kind == AccountKind::Main || list[i].color.is_some() {
+            let valid = list[i]
+                .color
+                .as_deref()
+                .is_some_and(|c| crate::taskbar::icon::parse_hex(c).is_some());
+            if list[i].kind == AccountKind::Main || valid {
                 continue;
             }
-            let used: Vec<String> = list.iter().filter_map(|a| a.color.clone()).collect();
+            list[i].color = None; // a hand-edited "blue" gets a real colour
+            let used: Vec<String> = list
+                .iter()
+                .filter_map(|a| a.color.clone())
+                .filter(|c| crate::taskbar::icon::parse_hex(c).is_some())
+                .collect();
             let used: Vec<&str> = used.iter().map(String::as_str).collect();
             list[i].color = Some(crate::taskbar::next_color(&used, used.len()).to_string());
             changed = true;
@@ -978,6 +987,20 @@ mod tests {
             "a second call changes nothing"
         );
         assert_eq!(f.accounts().unwrap(), list, "colours are saved");
+    }
+
+    #[test]
+    fn ensure_colors_replaces_a_colour_that_is_not_a_colour() {
+        let (f, _d) = flows();
+        let (a, _) = add_slot(&f, "A");
+        let mut list = f.accounts().unwrap();
+        list.iter_mut().find(|x| x.id == a).unwrap().color = Some("blue".into());
+        f.store.save(&list).unwrap();
+        let list = f.ensure_colors().unwrap();
+        assert_eq!(
+            list.iter().find(|x| x.id == a).unwrap().color.as_deref(),
+            Some("#2F6FDE")
+        );
     }
 
     #[test]

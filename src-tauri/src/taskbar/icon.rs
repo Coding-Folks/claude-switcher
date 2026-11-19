@@ -1,7 +1,7 @@
 //! The account's icon: Claude's own logo from the installed package, its orange plate recoloured to
 //! the account's colour (the white mark stays), written as a multi-size `.ico`.
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, ErrorCode};
 use std::path::{Path, PathBuf};
 
 /// Claude's plate colour in the logo (it has a slight gradient around this).
@@ -54,16 +54,21 @@ fn source_png(install_dir: &Path, size: u32) -> PathBuf {
 
 /// The account's icon in `dir`, written when missing. Fails when Claude's logo is not found.
 pub fn ensure(dir: &Path, install_dir: &Path, id: &str, color: &str) -> AppResult<PathBuf> {
-    let rgb = parse_hex(color).ok_or_else(|| AppError::io(format!("not a colour: {color}")))?;
+    let rgb = parse_hex(color).ok_or_else(|| {
+        AppError::new(ErrorCode::Invalid, "err.generic")
+            .with_detail(format!("not a colour: {color}"))
+    })?;
     let sources: Vec<Vec<u8>> = SIZES
         .iter()
         .filter_map(|&n| std::fs::read(source_png(install_dir, n)).ok())
         .collect();
     if sources.is_empty() {
-        return Err(AppError::io(format!(
-            "Claude's logo not found in {}",
-            install_dir.display()
-        )));
+        return Err(
+            AppError::new(ErrorCode::NotFound, "err.generic").with_detail(format!(
+                "Claude's logo not found in {}",
+                install_dir.display()
+            )),
+        );
     }
     let path = dir.join(file_name(id, color, &sources.concat()));
     if path.exists() {
@@ -165,6 +170,14 @@ mod tests {
     #[test]
     fn ensure_without_claude_installed_is_an_error_not_a_panic() {
         let dir = std::env::temp_dir().join(format!("cs-icon-{}", uuid::Uuid::new_v4()));
-        assert!(ensure(&dir, &dir.join("no-claude"), "id1", "#2F6FDE").is_err());
+        let e = ensure(&dir, &dir.join("no-claude"), "id1", "#2F6FDE").unwrap_err();
+        assert_eq!(e.code, crate::error::ErrorCode::NotFound, "{e:?}");
+    }
+
+    #[test]
+    fn ensure_with_a_bad_colour_is_not_reported_as_a_missing_logo() {
+        let dir = std::env::temp_dir().join(format!("cs-icon-{}", uuid::Uuid::new_v4()));
+        let e = ensure(&dir, &dir, "id1", "blue").unwrap_err();
+        assert_eq!(e.code, crate::error::ErrorCode::Invalid, "{e:?}");
     }
 }
