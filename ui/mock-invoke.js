@@ -53,6 +53,15 @@
       if (["Utama", "Main"].includes(main.account.label)) main.account.label = lang === "id" ? "Utama" : "Main";
       emit("status");
     },
+    // ?update=1: version 0.3.0 is out; ?update=fail: installing it fails.
+    async get_update() {
+      return params.has("update") ? { version: "0.3.0", notes_url: "https://github.com/Coding-Folks/claude-switcher/releases/tag/v0.3.0" } : null;
+    },
+    async install_update() {
+      for (const percent of [10, 45, 80, 100]) { await wait(60); emit("update-progress", { percent }); }
+      if (params.get("update") === "fail") throw { code: "Io", message_id: "err.update_failed", detail: "signature" };
+    },
+    async open_update_notes() {},
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {
       const a = find(id);

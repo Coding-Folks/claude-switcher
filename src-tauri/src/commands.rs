@@ -225,3 +225,28 @@ pub fn hide_panel(app: AppHandle) {
         let _ = w.hide();
     }
 }
+
+#[tauri::command]
+pub fn get_update(app: AppHandle) -> Option<crate::update::UpdateInfo> {
+    crate::update::current(&app)
+}
+
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    // Busy keeps the panel open while the UAC prompt has the focus.
+    state.busy.fetch_add(1, Ordering::SeqCst);
+    let out = crate::update::install(&app).await;
+    state.busy.fetch_sub(1, Ordering::SeqCst);
+    if let Err(e) = &out {
+        crate::applog::error(
+            "update failed",
+            &[("detail", e.detail.as_deref().unwrap_or(""))],
+        );
+    }
+    out
+}
+
+#[tauri::command]
+pub fn open_update_notes(app: AppHandle) -> AppResult<()> {
+    crate::update::open_notes(&app)
+}

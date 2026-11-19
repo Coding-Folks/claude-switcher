@@ -632,3 +632,37 @@ test('axe AA with twelve accounts and a search', async ({ page }) => {
   await page.getByRole('searchbox', { name: 'Cari akun' }).fill('klien');
   expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
 });
+
+// ---- Update from GitHub ----
+
+test('no update row without an update', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#update')).toBeHidden();
+});
+
+test('the update row shows the version and Perbarui', async ({ page }) => {
+  await ready(page, '&update=1');
+  const row = page.locator('#update');
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('Versi 0.3.0 tersedia');
+  await expect(row.getByRole('button', { name: 'Perbarui' })).toBeEnabled();
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('Perbarui shows the download progress and disables the button', async ({ page }) => {
+  await ready(page, '&update=1');
+  const button = page.locator('#update').getByRole('button', { name: 'Perbarui' });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(page.locator('#update-msg')).toContainText('Mengunduh pembaruan…');
+  await expect(page.locator('#update-msg')).toContainText('100%');
+});
+
+test('a failed update says so and keeps the row', async ({ page }) => {
+  await ready(page, '&update=fail');
+  await page.locator('#update').getByRole('button', { name: 'Perbarui' }).click();
+  await expect(page.locator('#alert')).toContainText('Pembaruan gagal');
+  await expect(page.locator('#update')).toBeVisible();
+  await expect(page.locator('#update').getByRole('button', { name: 'Perbarui' })).toBeEnabled();
+  await expect(page.locator('#update-msg')).toContainText('Versi 0.3.0 tersedia');
+});

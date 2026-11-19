@@ -120,6 +120,19 @@ button, input { font: inherit; color: inherit; }
 h1 { font-size: var(--fs-title); font-weight: 652; letter-spacing: -0.01em; margin: 0; flex: 1; }
 .count { margin: 0; color: var(--muted); font-size: var(--fs-small); }
 
+/* Update row: a new version on GitHub, installed only when the user presses Perbarui. */
+.update {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.5rem 0.5rem 1rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+}
+.update-text { margin: 0; flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.5rem; }
+#update-msg { font-weight: 600; }
+.link {
+  min-height: 1.5rem; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--link); font-size: var(--fs-small); font-weight: 600; text-decoration: underline; text-underline-offset: 2px;
+}
+.link:hover { text-decoration-thickness: 2px; }
+
 /* RAM strip: the signature element */
 .ram { display: flex; flex-direction: column; gap: 0.5rem; }
 .finding { margin: 0; color: var(--text); }
@@ -302,5 +315,5 @@ dialog .field { display: flex; flex-direction: column; gap: 0.5rem; margin-botto
   .switch input::before { background: ButtonText; }
   .switch input:checked { background: Highlight; border-color: Highlight; }
   .switch input:checked::before { background: HighlightText; }
-  .accounts, .menu, dialog, .alert { border: 1px solid CanvasText; }
+  .accounts, .menu, dialog, .alert, .update { border: 1px solid CanvasText; }
 }

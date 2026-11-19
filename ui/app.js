@@ -351,6 +351,30 @@
     getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
   }
 
+  // ---------- update ----------
+  // A newer release on GitHub: say so, and install it only when the user presses Perbarui.
+  let update = null, updating = false, updatePct = 0;
+  function renderUpdate() {
+    $("update").hidden = !update;
+    if (!update) return;
+    $("update-msg").textContent = updating
+      ? t("update_downloading", { p: updatePct })
+      : t("update_available", { v: update.version });
+    $("update-notes").hidden = updating;
+    $("update-go").disabled = updating;
+  }
+  async function refreshUpdate() {
+    try { update = await invoke("get_update"); } catch { update = null; }
+    renderUpdate();
+  }
+  listen("update-progress", (e) => { updatePct = e.payload.percent ?? updatePct; renderUpdate(); });
+  $("update-go").addEventListener("click", async () => {
+    updating = true; updatePct = 0; renderUpdate();
+    try { await invoke("install_update"); } // on success the app restarts into the new version
+    catch (err) { updating = false; renderUpdate(); showError(err); }
+  });
+  $("update-notes").addEventListener("click", () => invoke("open_update_notes").catch(showError));
+
   // ---------- search ----------
   $("search").addEventListener("input", () => renderAccounts());
   $("search").addEventListener("keydown", (e) => {
@@ -440,6 +464,7 @@
     setLang(lang);
     document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
     document.querySelectorAll("[data-ph]").forEach((el) => { el.placeholder = t(el.dataset.ph); });
+    if (typeof renderUpdate === "function") renderUpdate();
     const name = (window.LANGS.find(([c]) => c === window.LANG) || [, window.LANG])[1];
     $("lang-value").textContent = name;
     $("lang-value").lang = window.LANG;
@@ -448,7 +473,8 @@
 
   // ---------- boot ----------
   applyLang(window.LANG);
-  listen("status", () => refresh());
+  listen("status", () => { refresh(); refreshUpdate(); });
+  refreshUpdate();
   listen("open-add", () => setAddOpen(true)); // tray menu "Add account…"
   listen("progress", (ev) => announce(t("progress_" + ev.payload.step)));
   refresh().then(() => {
