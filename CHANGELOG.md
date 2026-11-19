@@ -14,6 +14,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   the installer), plus a GitHub build provenance attestation and checksum for every installer; see
   `docs/CODE-SIGNING.md`.
 
+### Fixed
+
+- Signing in with Google in a new account (this Windows user) finished in the Main account instead:
+  the browser hands the result back with a `claude://` link, which Windows always opened in Main.
+  Claude Switcher now handles `claude://` links and passes each one to the account that most recently
+  started a sign-in (within 15 minutes), and to Main otherwise.
+
 ## [0.1.0] — 2026-11-12
 
 First public release.

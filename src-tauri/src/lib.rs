@@ -1,6 +1,7 @@
 pub mod applog;
 pub mod claude_pkg;
 pub mod commands;
+pub mod deeplink;
 pub mod elevated;
 pub mod error;
 pub mod flows;
@@ -116,6 +117,21 @@ pub fn run() {
                     if f.has_opening() {
                         commands::refresh(&h);
                     }
+                });
+            }
+            // Google sign-in comes back as a claude:// link; route it to the account that started it.
+            // Claude writes its own handler back each time it starts, so keep re-asserting ours.
+            if let Ok(exe) = std::env::current_exe() {
+                std::thread::spawn(move || loop {
+                    match deeplink::ensure_handler(&exe) {
+                        Ok(true) => applog::info("claude:// handler set", &[]),
+                        Ok(false) => {}
+                        Err(e) => applog::error(
+                            "claude:// handler not set",
+                            &[("detail", &e.to_string())],
+                        ),
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
                 });
             }
             commands::refresh(&handle);

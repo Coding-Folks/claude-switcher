@@ -43,6 +43,12 @@ The `WindowsApps` junction lets Claude find its own alias; without it Claude rem
 Removing such an account deletes that slot folder. The junction is unlinked, never followed, and the
 app refuses any path that is not directly inside its own `slots` folder.
 
+Signing in with Google goes through your browser, which hands the result back with a `claude://`
+link. Windows would open that link in the Main account, so while it runs Claude Switcher registers
+itself as the `claude://` handler (`HKCU\Software\Classes\claude`) and passes each link to the account
+whose Claude log shows the most recent sign-in sent to the browser (within 15 minutes), or to Main.
+The link is never written to the log.
+
 To tell the instances apart (they all run as you), the app reads the `--user-data-dir=` that Claude's
 child processes carry on their command line.
 
