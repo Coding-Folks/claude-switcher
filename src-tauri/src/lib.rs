@@ -32,6 +32,30 @@ fn data_dir(var: &str) -> PathBuf {
         .join("ClaudeSwitcher")
 }
 
+/// Opens an account for a pinned taskbar button or Start Menu shortcut (`--launch <id>`). When it
+/// needs the user (low RAM, an error), the panel opens instead.
+fn launch_account(app: &tauri::AppHandle, id: String) {
+    let Ok(f) = app.state::<AppState>().flows.clone() else {
+        return tray::show_panel(app, None);
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let res = f.open(&id, false);
+        commands::refresh(&app);
+        match res {
+            Ok(flows::OpenOutcome::NeedsLowRamConfirm) => tray::show_panel(&app, None),
+            Ok(_) => {}
+            Err(e) => {
+                applog::error(
+                    "launch from taskbar",
+                    &[("account", &id), ("code", &format!("{:?}", e.code))],
+                );
+                tray::show_panel(&app, None);
+            }
+        }
+    });
+}
+
 pub fn run() {
     applog::init(&data_dir("LOCALAPPDATA").join("logs"));
     let store_path = data_dir("APPDATA").join("accounts.json");
@@ -52,9 +76,12 @@ pub fn run() {
     let install_dir = flows.as_ref().ok().map(|f| f.platform().install_dir());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            tray::show_panel(app, None)
-        }))
+        .plugin(tauri_plugin_single_instance::init(
+            |app, args, _cwd| match taskbar::launch_arg(&args) {
+                Some(id) => launch_account(app, id),
+                None => tray::show_panel(app, None),
+            },
+        ))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -134,6 +161,23 @@ pub fn run() {
                     }
                     std::thread::sleep(std::time::Duration::from_secs(2));
                 });
+            }
+            if let (Ok(f), Ok(exe)) = (
+                handle.state::<AppState>().flows.clone(),
+                std::env::current_exe(),
+            ) {
+                // Each account's Claude windows get their own taskbar button; Claude drops the identity
+                // when it recreates a window, so this runs again and again.
+                std::thread::spawn(move || {
+                    let mut st = taskbar::TickState::default();
+                    loop {
+                        taskbar::tick(&f, &exe, &mut st);
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                    }
+                });
+            }
+            if let Some(id) = taskbar::launch_arg(&std::env::args().collect::<Vec<_>>()) {
+                launch_account(&handle, id); // started by a pinned button or shortcut
             }
             commands::refresh(&handle);
             if let Some(dir) = install_dir.clone() {

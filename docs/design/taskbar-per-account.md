@@ -1,6 +1,6 @@
 # Tombol taskbar per akun, dengan ikon Claude berwarna
 
-Status: desain, menunggu persetujuan · 2026-11-19
+Status: diimplementasikan · 2026-11-19
 
 ## Maksud
 
