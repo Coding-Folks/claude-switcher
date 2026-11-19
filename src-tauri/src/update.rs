@@ -14,6 +14,9 @@ const KEY: &str = include_str!("../updater.pub");
 const REPO: &str = "https://github.com/Coding-Folks/claude-switcher";
 const FIRST_CHECK: Duration = Duration::from_secs(10);
 const EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// A stalled connection must not hang the check loop or the panel's "Mengunduh…" forever.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 /// The public key in a key file, or None when it is empty (updates off).
 pub fn key_from(s: &str) -> Option<&str> {
@@ -59,7 +62,9 @@ pub fn current(app: &AppHandle) -> Option<UpdateInfo> {
 async fn check(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
     use tauri_plugin_updater::UpdaterExt;
     let found = app
-        .updater()
+        .updater_builder()
+        .timeout(CHECK_TIMEOUT)
+        .build()
         .map_err(failed)?
         .check()
         .await
@@ -103,7 +108,9 @@ pub fn spawn_checks(app: AppHandle, on_change: impl Fn() + Send + 'static) {
 pub async fn install(app: &AppHandle) -> AppResult<()> {
     use tauri_plugin_updater::UpdaterExt;
     let update = app
-        .updater()
+        .updater_builder()
+        .timeout(DOWNLOAD_TIMEOUT)
+        .build()
         .map_err(failed)?
         .check()
         .await

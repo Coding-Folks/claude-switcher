@@ -32,6 +32,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check the tag is the app version
+        shell: pwsh
+        run: ./.github/scripts/check-version.ps1 -Tag $env:GITHUB_REF_NAME
       - name: Check the update key setup
         shell: pwsh
         run: |

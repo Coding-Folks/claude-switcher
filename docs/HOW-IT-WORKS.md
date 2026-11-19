@@ -90,8 +90,10 @@ and only reads or writes `<uuid>.secret` / `<uuid>.result.json` files directly i
 
 When the build carries an update key (`src-tauri/updater.pub`), the app fetches
 `https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json` 10 seconds after
-it starts and every 6 hours. That is its only network request, and it sends nothing but an ordinary
-HTTPS request. A newer version is shown in the panel; **Perbarui** downloads the installer, checks its
+it starts and every 6 hours (30 s timeout). That is its only network request: an ordinary HTTPS
+request that carries no data about the user, only the IP address and the app's name and version any
+such request reveals. A newer version is shown in the panel; **Update** (**Perbarui**) downloads the
+installer from GitHub (`objects.githubusercontent.com`), checks its
 signature against the built-in key, and runs it in passive mode (one UAC prompt, a progress bar), after
 which the app restarts. How releases are signed: [CODE-SIGNING.md](CODE-SIGNING.md#updates).
 

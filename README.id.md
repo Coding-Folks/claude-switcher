@@ -93,8 +93,10 @@ Penjelasan lengkap: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
   membaca atau menulis file di folder pertukarannya sendiri.
 - Tidak ada telemetri. Satu-satunya permintaan jaringan adalah cek pembaruan: bila rilisnya membawa kunci
   update, aplikasi meminta `latest.json` rilis terbaru ke github.com 10 detik setelah mulai dan tiap
-  6 jam. Tidak ada data tentang Anda atau akun Anda yang dikirim; pembaruan hanya dipasang saat Anda
-  menekan **Perbarui**, dan hanya bila tanda tangannya cocok dengan kunci di dalam aplikasi.
+  6 jam (unduhannya sendiri dari `objects.githubusercontent.com` milik GitHub). Tidak ada data tentang
+  Anda atau akun Anda di dalamnya, hanya yang terlihat dari setiap permintaan HTTPS (alamat IP Anda serta
+  nama dan versi aplikasi). Pembaruan hanya dipasang saat Anda menekan **Perbarui**, dan hanya bila tanda
+  tangannya cocok dengan kunci di dalam aplikasi.
 
 Menemukan celah keamanan? Lihat [SECURITY.md](SECURITY.md). Cara rilis dibangun dan ditandatangani:
 [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).

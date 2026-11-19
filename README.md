@@ -103,8 +103,10 @@ Details, folder layout and the findings behind both modes: [docs/HOW-IT-WORKS.md
   or writes files in its own exchange folder.
 - No telemetry. The only network request is the update check: when the release has an update key,
   the app asks github.com for `latest.json` of the newest release 10 seconds after it starts and every
-  6 hours. Nothing about you or your accounts is sent; an update installs only when you press
-  **Update**, and only if its signature matches the key built into the app.
+  6 hours (the download itself comes from GitHub's `objects.githubusercontent.com`). It carries no data
+  about you or your accounts, only what any HTTPS request reveals (your IP address and the app's name
+  and version). An update installs only when you press **Update**, and only if its signature matches
+  the key built into the app.
 
 Found a vulnerability? Please see [SECURITY.md](SECURITY.md). How releases are built and signed:
 [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
@@ -113,7 +115,7 @@ Found a vulnerability? Please see [SECURITY.md](SECURITY.md). How releases are b
 
 When a newer release is out, the panel shows **Version x.y.z is available** with **Update**. Pressing it
 downloads the installer, checks its signature, asks for admin approval once (UAC) and reopens the app
-in the new version. Nothing installs on its own. [What's new] opens the release page.
+in the new version. Nothing installs on its own. **What's new** opens the release page.
 
 ## Limitations
 

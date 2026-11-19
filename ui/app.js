@@ -80,6 +80,14 @@
     return shown;
   }
 
+  // Where focus goes when the control it was on has disappeared: the search, else the first account.
+  function focusFallback() {
+    const search = $("search");
+    if (!$("search-box").hidden) return search.focus();
+    const first = $("accounts").querySelector('[data-role="primary"]:not(:disabled)');
+    (first || $("add-open")).focus();
+  }
+
   function renderAccounts() {
     const list = $("accounts");
     const focusedId = document.activeElement && document.activeElement.closest(".account")?.dataset.id;
@@ -118,6 +126,9 @@
     if (focusedId) {
       const el = list.querySelector(`.account[data-id="${focusedId}"] [data-role="${focusedRole || "primary"}"]`);
       if (el && !el.disabled) el.focus();
+      else focusFallback(); // the row was filtered out or removed
+    } else if (document.activeElement === document.body || document.activeElement?.closest("[hidden]")) {
+      focusFallback(); // e.g. the search was hidden with focus inside (nine accounts down to eight)
     }
   }
 

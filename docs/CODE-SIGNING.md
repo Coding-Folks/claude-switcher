@@ -36,8 +36,9 @@ commits by committers; outside contributions come in as reviewed pull requests.
 This program will not transfer any information to other networked systems unless specifically
 requested by the user or the person installing or operating it. It has no telemetry. Its only network
 request is the update check described under [Updates](#updates): it asks github.com for the newest
-release's `latest.json`, sends nothing about the user, and installs an update only when the user
-presses **Perbarui**; see [SECURITY.md](../SECURITY.md).
+release's `latest.json` (no data about the user beyond what any HTTPS request reveals: the IP address
+and the app's name and version), and installs an update only when the user presses **Update**
+(**Perbarui**); see [SECURITY.md](../SECURITY.md).
 
 ## Updates
 
@@ -59,7 +60,13 @@ whose signature does not match the public key built into it.
 update key, writes `latest.json` and attaches both to the draft release. Installed copies see it only
 once the release is **published**, through
 `https://github.com/Coding-Folks/claude-switcher/releases/latest/download/latest.json`. The tag must be
-the app's version (`v` + `version` in `src-tauri/tauri.conf.json`).
+the app's version (`v` + `version` in `src-tauri/tauri.conf.json`); the workflow stops otherwise,
+because a mismatch would offer the same release to installed copies again and again.
+
+**Known limit:** the signature covers the installer, not the version number in `latest.json`
+(`cargo tauri signer sign` does not record it), so someone able to change this repository's release
+assets could offer an older, validly signed installer as "new". Protecting the repository and its
+releases is therefore part of protecting updates.
 
 ## Checking a download
 

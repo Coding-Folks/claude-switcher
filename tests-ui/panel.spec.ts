@@ -666,3 +666,25 @@ test('a failed update says so and keeps the row', async ({ page }) => {
   await expect(page.locator('#update').getByRole('button', { name: 'Perbarui' })).toBeEnabled();
   await expect(page.locator('#update-msg')).toContainText('Versi 0.3.0 tersedia');
 });
+
+// ---- Fixes from the final review ----
+
+test('forced-colors: a focused text field shows a focus outline', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await ready(page);
+  await page.locator('#add-open').click();
+  await page.locator('#add-label').focus();
+  const style = await page.locator('#add-label').evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(style).not.toBe('none');
+});
+
+test('renaming the focused account out of the search keeps focus in the panel (on the search)', async ({ page }) => {
+  await readyMany(page);
+  await page.getByRole('searchbox', { name: 'Cari akun' }).fill('tim');
+  await row(page, 'Tim Data').getByRole('button', { name: 'Opsi untuk Tim Data' }).click();
+  await page.getByRole('menuitem', { name: 'Ganti nama' }).click();
+  await page.locator('#confirm-input').fill('Keuangan Dua');
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('.account')).toHaveCount(1);
+  await expect(page.getByRole('searchbox', { name: 'Cari akun' })).toBeFocused();
+});

@@ -311,6 +311,8 @@ dialog .field { display: flex; flex-direction: column; gap: 0.5rem; margin-botto
   .primary, .secondary, .ghost, .kebab { border: 1px solid ButtonText; }
   .switch input { forced-color-adjust: none; background: Canvas; border-color: ButtonText; }
   #lang, #lang-list { border: 1px solid ButtonText; }
+  /* The brand border and ring vanish in forced colours: the outline is the focus cue there. */
+  input[type="text"]:focus, input[type="search"]:focus { outline: 2px solid Highlight; outline-offset: 2px; }
   #lang-list .is-active { background: Highlight; color: HighlightText; forced-color-adjust: none; }
   .switch input::before { background: ButtonText; }
   .switch input:checked { background: Highlight; border-color: Highlight; }
