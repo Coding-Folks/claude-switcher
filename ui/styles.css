@@ -35,7 +35,7 @@
   --link: #0c60e8;           /* blue text: blue-500 is only 4.1:1 on --ground */
   --data: #0d6aff;           /* Claude's RAM */
   --accent: #f48200;         /* orange-500: decoration only (2.6:1), never text */
-  --other: #9ca1aa;          /* gray-300 */
+  --other: #898e99;          /* gray-400, 3.3:1 on white: stopped dot, other apps' RAM */
   --negative: #b3261e;       /* 5.9:1 on white */
   --positive: #2e7d32;
   --focus: #1f2937;
@@ -65,7 +65,7 @@
     --text: #ffffff;
     --muted: #9ca1aa;        /* gray-300, 7.0:1 on black-800 */
     --primary: #0d6aff;      /* same brand button: white text 4.6:1 */
-    --primary-hover: #3d88ff;
+    --primary-hover: #0c60e8; /* blue-600: white text 5.5:1 (blue-400 would be 3.4:1) */
     --on-primary: #ffffff;
     --link: #5d9bff;         /* blue-300, 6.5:1 on black-800 */
     --data: #5d9bff;

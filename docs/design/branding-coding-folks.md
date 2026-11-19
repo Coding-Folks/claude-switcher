@@ -59,10 +59,11 @@ Rasio kontras dihitung dengan rumus WCAG.
 | `--text` | black-500 `#1F2937` (13:1) | `#FFFFFF` | |
 | `--muted` | gray-600 `#616874` (5,0:1) | gray-300 `#9CA1AA` (7,0:1) | gray-500 kit hanya 4,5:1 di atas `--ground`, terlalu tipis |
 | `--primary` | blue-500 `#0D6AFF` | blue-500 `#0D6AFF` | tombol utama; teks putih 4,6:1 |
-| `--primary-hover` (baru) | blue-600 `#0C60E8` | blue-400 `#3D88FF` | |
+| `--primary-hover` (baru) | blue-600 `#0C60E8` | blue-600 `#0C60E8` | teks putih 5,5:1 (blue-400 hanya 3,4:1) |
 | `--on-primary` | `#FFFFFF` | `#FFFFFF` | |
 | `--link` (baru) | blue-600 `#0C60E8` (≥4,8:1) | blue-300 `#5D9BFF` (6,5:1) | teks biru; blue-500 hanya 4,1:1 di atas `--ground` |
 | `--data` | blue-500 `#0D6AFF` | blue-300 `#5D9BFF` | RAM Claude (non-teks) |
+| `--other` | gray-400 `#898E99` (3,3:1) | gray-500 `#686E7C` | titik akun mati, RAM aplikasi lain (non-teks, ≥3:1) |
 | `--accent` (baru) | orange-500 `#F48200` | orange-400 `#F69B33` | hanya dekorasi: titik di tanda, penanda akun aktif bersama teks |
 | `--negative`, `--positive` | tetap | tetap | kit tidak punya merah/hijau |
 | `--focus` | black-500 `#1F2937` | `#FFFFFF` | |
@@ -78,7 +79,8 @@ berubah (sudah memakai warna sistem).
   400), disalin dari `landing-page/public/fonts` (OFL; lisensi ikut disalin ke `ui/fonts/OFL.txt`).
 - `--font`: `"Instrument Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`.
 - `--font-mono` (baru): `"IBM Plex Mono", ui-monospace, monospace`, dipakai kelas `.num` yang sudah
-  ada (angka RAM, jumlah berjalan, ukuran per akun).
+  ada; dipakai untuk jumlah berjalan dan legenda RAM saja (baris status akun tetap Instrument Sans,
+  karena kata-kata dalam mono melebar dan terbaca seperti kode).
 - Bobot: judul 652, tombol/label 600, isi 456 (sumbu variabel Instrument Sans, seperti kit).
 - Ukuran tetap (16/14/12 px): skala kit dibuat untuk halaman web, panel tray 320 px tetap kecil.
 
@@ -99,7 +101,7 @@ berubah (sudah memakai warna sistem).
 - `social-preview-dark.png`: tata letak sama di atas black-900.
 - `tests-ui/scripts/render-brand.mjs` memuat kedua font dari `ui/fonts` (bukan file opsional).
 - Screenshot `docs/assets/panel-*.png` dibuat ulang dengan `tests-ui/scripts/docs-shots.mjs`.
-- Footer panel: baris kecil "by Coding Folks" (teks, `--muted`), di kedua bahasa.
+- Footer panel: baris kecil "by Coding Folks." di kedua bahasa: "by" `--muted`, "Coding Folks" `--text` 600, titik oranye `--accent`.
 
 ## Diserahkan ke pembuat
 

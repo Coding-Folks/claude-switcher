@@ -420,3 +420,37 @@ test('a 40-character account name does not widen the panel', async ({ page }) =>
   await expect(page.locator('.name', { hasText: 'WWWW' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });
+
+// Contrast measured on the computed colours (axe does not see hover states).
+function contrast(a: string, b: string) {
+  const lum = (c: string) => {
+    const [r, g, bl] = c.match(/\d+/g)!.slice(0, 3).map((v) => {
+      const x = Number(v) / 255;
+      return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`hovered primary button text stays AA (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await ready(page);
+    const btn = page.locator('#add-open');
+    await btn.hover();
+    await page.waitForTimeout(200); // the 120 ms background transition
+    const [fg, bg] = await btn.evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el).backgroundColor]);
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+test('the stopped dot and the "other" RAM colour stay visible on light surfaces (3:1)', async ({ page }) => {
+  await ready(page);
+  const other = await page.evaluate(() => {
+    const d = document.createElement('i'); d.style.color = 'var(--other)'; document.body.append(d);
+    const c = getComputedStyle(d).color; d.remove(); return c;
+  });
+  expect(contrast(other, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
+});
