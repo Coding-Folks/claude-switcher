@@ -85,11 +85,29 @@ pub fn list(roots: &[PathBuf], max: usize) -> Vec<SessionSummary> {
     out
 }
 
-/// The `<account>\<org>` folder Claude uses now in an account: the one changed most recently.
+fn modified(p: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).ok()?.modified().ok()
+}
+
+/// When a folder was last really used by Claude: its newest session file (Claude rewrites the open
+/// account's files all the time), else the folder itself. A folder's own time also moves when
+/// something else adds a file (Import history), so it only breaks ties for empty folders.
+fn last_used(dir: &Path) -> Option<std::time::SystemTime> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("local_"))
+        .filter_map(|e| modified(&e.path()))
+        .max()
+        .or_else(|| modified(dir))
+}
+
+/// The `<account>\<org>` folder Claude uses now in an account: the one whose sessions changed last.
 pub fn target_dir(roots: &[PathBuf]) -> Option<PathBuf> {
     org_dirs(roots)
         .into_iter()
-        .filter_map(|d| Some((std::fs::metadata(&d).ok()?.modified().ok()?, d)))
+        .filter_map(|d| Some((last_used(&d)?, d)))
         .max_by_key(|(t, _)| *t)
         .map(|(_, d)| d)
 }
@@ -243,6 +261,30 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
         std::fs::create_dir_all(&new).unwrap();
         assert_eq!(target_dir(&[root]), Some(new));
+    }
+
+    #[test]
+    fn the_target_is_the_folder_with_the_newest_session_file_not_the_newest_folder() {
+        let root = tmp().join("claude-code-sessions");
+        let used = root.join("acc1").join("org1");
+        let touched = root.join("acc2").join("org2");
+        std::fs::create_dir_all(&used).unwrap();
+        write(&used.join("local_x.json"), "{}");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Another folder changed later (e.g. by Import history) but holds older session files.
+        std::fs::create_dir_all(&touched).unwrap();
+        let old_file = touched.join("local_y.json");
+        write(&old_file, "{}");
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&old_file)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        write(&used.join("local_x.json"), "{\"a\":1}"); // Claude keeps writing the signed-in one
+        assert_eq!(target_dir(&[root]), Some(used));
     }
 
     #[test]

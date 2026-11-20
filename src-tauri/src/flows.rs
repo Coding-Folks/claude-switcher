@@ -640,12 +640,33 @@ impl<P: Platform> Flows<P> {
             .into_iter()
             .find(|s| s.id == session_id)
             .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.not_found"))?;
-        // Check the destination before touching it: a never signed-in account is not closed.
+        // Check everything that can fail before closing anything: a never signed-in destination,
+        // an unreadable source, a newer copy already in the destination.
         let dir = crate::sessions::target_dir(&dst_roots)
             .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.continue_no_signin"))?;
+        let now = || chrono::Utc::now().timestamp_millis();
+        let existing = session
+            .path
+            .file_name()
+            .and_then(|n| std::fs::read_to_string(dir.join(n)).ok());
+        if let crate::sessions::CopyPlan::DestinationNewer = crate::sessions::plan_copy(
+            &std::fs::read_to_string(&session.path)?,
+            existing.as_deref(),
+            now(),
+        )? {
+            return Err(AppError::new(ErrorCode::Invalid, "err.continue_newer"));
+        }
+        // The source closes too, so the same conversation is never written from two accounts.
+        self.close_and_wait(&src)?;
+        let snap = self.p.snapshot();
+        let dst_was_running = self.running_root(&dst, &snap).is_some();
         self.close_and_wait(&dst)?;
-        let now = chrono::Utc::now().timestamp_millis();
-        crate::sessions::copy(&session.path, &dir, now)?;
+        if let Err(e) = crate::sessions::copy(&session.path, &dir, now()) {
+            if dst_was_running {
+                let _ = self.open(to, true); // leave it as it was
+            }
+            return Err(e);
+        }
         crate::applog::info(
             "continue session",
             &[("from", from), ("to", to), ("session", session_id)],
@@ -1169,6 +1190,49 @@ mod tests {
         let e = f.continue_in("local_a", &main_id(&f), &b).unwrap_err();
         assert_eq!(e.message_id, "err.still_running");
         assert!(!to.join("local_a.json").exists());
+    }
+
+    #[test]
+    fn a_running_source_is_closed_too_so_one_session_is_never_open_twice() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        f.p.running.lock().unwrap().push(InstanceStatus {
+            owner_sid: "SID-main".into(),
+            root_pid: 3,
+            bytes: GB,
+            data_dir: None,
+        });
+        f.continue_in("local_a", &main_id(&f), &b).unwrap();
+        assert!(
+            f.p.calls().iter().any(|c| c.starts_with("close 3")),
+            "{:?}",
+            f.p.calls()
+        );
+    }
+
+    #[test]
+    fn a_newer_copy_in_the_destination_is_found_before_anything_is_closed() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        let to = sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        std::fs::write(
+            to.join("local_a.json"),
+            serde_json::json!({"sessionId": "local_a", "lastActivityAt": 99}).to_string(),
+        )
+        .unwrap();
+        f.p.running.lock().unwrap().push(slot_instance(&root, 7, 1));
+        let e = f.continue_in("local_a", &main_id(&f), &b).unwrap_err();
+        assert_eq!(e.message_id, "err.continue_newer");
+        assert!(
+            !f.p.calls().iter().any(|c| c.starts_with("close")),
+            "{:?}",
+            f.p.calls()
+        );
     }
 
     #[test]

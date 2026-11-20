@@ -220,7 +220,7 @@
     items.push(["rename", t("menu_rename")], ["repair", t("menu_repair")]);
     // Continue a session elsewhere: Main and this user's slots, when another of them exists.
     const canContinue = (x) => x.account.kind === "main" || x.account.kind === "same_user";
-    if (canContinue(a) && accounts.some((x) => x !== a && canContinue(x))) items.push(["continue", t("menu_continue")]);
+    if (canContinue(a) && accounts.some((x) => x.account.id !== a.account.id && canContinue(x))) items.push(["continue", t("menu_continue")]);
     if (a.account.kind !== "main") items.push(["import", t("menu_import")], ["remove", t("menu_remove")]);
     menu.replaceChildren(...items.map(([action, text]) => {
       const b = document.createElement("button");
@@ -425,15 +425,21 @@
   const continueTo = makePicker($("continue-to"), $("continue-to-list"), $("continue-to-value"), (id) => {
     continueTo.select(id); continueNote();
   });
+  let continueFrom = null;
   function continueNote() {
-    const target = byId(continueTo.value);
+    const target = byId(continueTo.value), source = byId(continueFrom);
     if (!target) return;
-    $("continue-note").textContent = t(target.state === "Running" ? "continue_note_running" : "continue_note", { label: target.account.label });
+    let note = t(target.state === "Running" ? "continue_note_running" : "continue_note", { label: target.account.label });
+    if (source && source.state === "Running") note += " " + t("continue_note_source", { label: source.account.label });
+    $("continue-note").textContent = note;
   }
-  async function continueSession(a) {
+  async function continueSession(menuAccount) {
+    // A status refresh rebuilds `accounts`: work with the current entries, compared by id.
+    const a = byId(menuAccount.account.id) || menuAccount;
+    continueFrom = a.account.id;
     const sessions = await invoke("list_sessions", { id: a.account.id });
     if (!sessions.length) return showError({ message_id: "continue_none" }, { label: a.account.label });
-    const targets = accounts.filter((x) => x !== a && (x.account.kind === "main" || x.account.kind === "same_user"));
+    const targets = accounts.filter((x) => x.account.id !== a.account.id && (x.account.kind === "main" || x.account.kind === "same_user"));
     $("continue-from").textContent = t("continue_from", { label: a.account.label });
     $("continue-list").replaceChildren(...sessions.map((s, i) => {
       const label = document.createElement("label");

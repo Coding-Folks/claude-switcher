@@ -806,3 +806,23 @@ test('Esc closes the continue dialog and returns focus to the options button', a
   await expect(page.locator('#continue')).not.toBeVisible();
   await expect(row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' })).toBeFocused();
 });
+
+test('a status refresh while the menu is open never offers the source as its own destination', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' }).click();
+  await page.evaluate(() => (window as any).__MOCK__.emit('status')); // the accounts list is rebuilt
+  await page.waitForTimeout(200);
+  await page.getByRole('menuitem', { name: 'Lanjutkan sesi di akun lain…' }).click();
+  const picker = page.locator('#continue').getByRole('combobox', { name: 'Ke akun' });
+  await expect(picker).toContainText('Slot B');
+  await picker.click();
+  await expect(page.locator('#continue-to-list [role="option"]')).toHaveText(['Slot B']);
+});
+
+test('the dialog says the running source closes too, and the OK button carries that note', async ({ page }) => {
+  await ready(page);
+  await openContinue(page);
+  const note = page.locator('#continue-note');
+  await expect(note).toContainText('Utama juga ditutup');
+  await expect(page.locator('#continue-ok')).toHaveAttribute('aria-describedby', 'continue-note');
+});

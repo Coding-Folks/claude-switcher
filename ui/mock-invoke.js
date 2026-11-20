@@ -77,8 +77,9 @@
         { id: "local_c", title: "", folder: "landing-page", last_activity: now - 3 * 86400000 },
       ];
     },
-    async continue_session({ sessionId, to }) {
+    async continue_session({ sessionId, from, to }) {
       if (params.get("continue") === "newer") throw { code: "Invalid", message_id: "err.continue_newer", detail: null };
+      const src = find(from); src.state = "Stopped"; src.bytes = null;
       const a = find(to); a.state = "Running"; a.bytes = Math.round(0.9 * GB); emit("status", null);
       return { local_a: "Sesi terakhir wedding app", local_b: "Fix login Google" }[sessionId] || "";
     },
