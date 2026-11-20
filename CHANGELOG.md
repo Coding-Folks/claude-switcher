@@ -5,6 +5,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A console window flashed up when Claude Switcher started (and when it closed or repaired an
+  account): the PowerShell, icacls and taskkill calls now run without a window.
+- The panel drifted up, away from the tray, when it got shorter (an account removed, the add form
+  closed) and could slide under the taskbar when it grew: it now keeps the edge next to the taskbar
+  in place.
+
 ## [0.2.0] — 2026-11-20
 
 ### Added
