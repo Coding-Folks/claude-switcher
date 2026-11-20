@@ -76,6 +76,7 @@
     },
     async open_update_notes() {},
     async open_link_settings() {},
+    async fit_panel({ height }) { window.__MOCK__.heights.push(height); },
     // ?newer=1: "Check now" finds 0.3.0
     async check_update_now() {
       return params.has("newer") || params.has("update") ? { version: "0.3.0", notes_url: "https://github.com/Coding-Folks/claude-switcher/releases/tag/v0.3.0" } : null;
@@ -141,6 +142,7 @@
 
   window.__MOCK__ = {
     calls: {}, // how often each command ran (tests)
+    heights: [], // every height the panel asked the window for
     invoke: async (cmd, args) => {
       window.__MOCK__.calls[cmd] = (window.__MOCK__.calls[cmd] || 0) + 1;
       if (!handlers[cmd]) throw { code: "Io", message_id: "err.generic", detail: "unknown command " + cmd };

@@ -976,3 +976,14 @@ test('the 30-second countdown refresh leaves an open menu alone', async ({ page 
   await page.keyboard.press('Escape');
   await expect(row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' })).toBeFocused();
 });
+
+test('the panel shrinks when a card goes away (Nanti on the link card)', async ({ page }) => {
+  // a screen tall enough that the panel is not capped at its maximum height
+  await page.addInitScript(() => Object.defineProperty(screen, 'availHeight', { get: () => 1400 }));
+  await ready(page, '&link=other');
+  const last = () => page.evaluate(() => { const h = (window as any).__MOCK__.heights; return h[h.length - 1] ?? 0; });
+  await expect.poll(last).toBeGreaterThan(0);
+  const before = await last();
+  await page.locator('#link-ask').getByRole('button', { name: 'Nanti' }).click();
+  await expect.poll(last).toBeLessThan(before);
+});

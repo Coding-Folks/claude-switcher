@@ -296,9 +296,7 @@ fn link_handler(f: &AppFlows) -> &'static str {
 /// Opens Windows' Default apps page for Claude Switcher, where the user picks it for CLAUDE links.
 #[tauri::command]
 pub fn open_link_settings() -> AppResult<()> {
-    std::process::Command::new("explorer.exe")
-        .arg("ms-settings:defaultapps?registeredAppUser=Claude%20Switcher")
-        .spawn()?;
+    crate::proc::open_link("ms-settings:defaultapps?registeredAppUser=Claude%20Switcher")?;
     Ok(())
 }
 
@@ -363,9 +361,7 @@ pub fn url_for(which: &str) -> Option<&'static str> {
 #[tauri::command]
 pub fn open_url(which: String) -> AppResult<()> {
     let url = url_for(&which).ok_or_else(|| AppError::new(ErrorCode::Invalid, "err.generic"))?;
-    std::process::Command::new("explorer.exe")
-        .arg(url)
-        .spawn()?;
+    crate::proc::open_link(url)?;
     Ok(())
 }
 

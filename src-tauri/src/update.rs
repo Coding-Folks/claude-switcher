@@ -267,9 +267,7 @@ pub fn open_notes(app: &AppHandle) -> AppResult<()> {
     let url = current(app)
         .map(|u| u.notes_url)
         .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.not_found"))?;
-    std::process::Command::new("explorer.exe")
-        .arg(&url)
-        .spawn()?;
+    crate::proc::open_link(&url)?;
     Ok(())
 }
 

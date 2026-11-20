@@ -5,6 +5,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Open Windows settings** (Google sign-in card and Settings) opened the Documents folder instead of
+  Default apps. Links now open through the Windows shell; the GitHub links in Settings too.
+- The panel now shrinks when a card goes away (such as **Later** on the sign-in card), instead of
+  keeping its height with the content moved up.
+
 ## [0.3.0] — 2026-11-20
 
 ### Added
