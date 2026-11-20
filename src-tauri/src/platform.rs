@@ -45,6 +45,8 @@ pub trait Platform: Send + Sync {
     fn launch_slot(&self, data_root: &Path) -> AppResult<()>;
     fn slot_move_label(&self, data_root: &Path) -> Option<String>;
     fn slot_import(&self, data_root: &Path) -> AppResult<usize>;
+    /// The `claude-code-sessions` folders of Main (None) or of a same-user slot.
+    fn session_dirs(&self, data_root: Option<&Path>) -> Vec<PathBuf>;
 }
 
 pub struct WinPlatform {
@@ -190,5 +192,8 @@ impl Platform for WinPlatform {
     }
     fn slot_import(&self, data_root: &Path) -> AppResult<usize> {
         crate::slot::import_sessions(&self.real_local, data_root, &self.pkg.family)
+    }
+    fn session_dirs(&self, data_root: Option<&Path>) -> Vec<PathBuf> {
+        crate::history::sessions_dirs(data_root.unwrap_or(&self.real_local))
     }
 }

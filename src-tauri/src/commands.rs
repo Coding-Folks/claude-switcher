@@ -299,3 +299,29 @@ pub fn open_link_settings() -> AppResult<()> {
         .spawn()?;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn list_sessions(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<Vec<crate::sessions::SessionSummary>> {
+    let f = state.flows()?;
+    tauri::async_runtime::spawn_blocking(move || f.sessions_of(&id))
+        .await
+        .map_err(AppError::io)?
+}
+
+#[tauri::command]
+pub async fn continue_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    from: String,
+    to: String,
+) -> AppResult<String> {
+    let f = state.flows()?;
+    blocking(&app, &state.busy, move || {
+        f.continue_in(&session_id, &from, &to)
+    })
+    .await
+}
