@@ -826,3 +826,44 @@ test('the dialog says the running source closes too, and the OK button carries t
   await expect(note).toContainText('Utama juga ditutup');
   await expect(page.locator('#continue-ok')).toHaveAttribute('aria-describedby', 'continue-note');
 });
+
+// ---- Usage and limits per account ----
+
+test('each Main and slot row shows its 5-hour usage', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Utama').locator('.usage')).toContainText('5 jam: 1,3 jt token');
+  await expect(row(page, 'Kantor').locator('.usage')).toHaveCount(0);
+});
+
+test('percent of the learned limit when it is known', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Slot B').locator('.usage')).toContainText('± 30% dari batas');
+});
+
+test('a limited account shows when it recovers', async ({ page }) => {
+  await ready(page, '&limited=1');
+  const r = row(page, 'Utama');
+  await expect(r.locator('.usage')).toContainText('Limit · pulih');
+  await expect(r).toHaveClass(/is-limited/);
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('mark and clear a limit from the menu', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Tandai kena limit…' }).click();
+  const input = page.locator('#confirm-input');
+  await expect(input).toHaveValue(/^\d{2}:\d{2}$/);
+  await page.locator('#confirm-ok').click();
+  await expect(row(page, 'Slot B').locator('.usage')).toContainText('Limit · pulih');
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Hapus tanda limit' }).click();
+  await expect(row(page, 'Slot B').locator('.usage')).not.toContainText('Limit · pulih');
+});
+
+test('the usage line is explained to screen readers', async ({ page }) => {
+  await ready(page);
+  const btn = row(page, 'Utama').locator('[data-role="primary"]');
+  await expect(btn).toHaveAttribute('aria-describedby', /usage-help/);
+  await expect(page.locator('#usage-help')).toContainText('Chat tidak terhitung');
+});

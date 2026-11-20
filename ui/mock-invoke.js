@@ -19,6 +19,14 @@
     const id = "a-x" + i;
     accounts.push({ account: { id, label: extra[i], kind: "same_user", windows_user: null, created_at: "2026-11-13T08:00:00Z", data_root: `C:/Users/alice/AppData/Local/ClaudeSwitcher/slots/${id}/Local` }, state: "Stopped", bytes: null });
   }
+  // Usage: Main and same-user rows; ?limited=1 puts Utama at its limit for 2 h 14 m.
+  const usageOf = {
+    "a-main": { five_h: 1250000, seven_d: 9000000, limited_until: params.get("limited") ? Date.now() + (2 * 60 + 14) * 60000 : null, limit_source: params.get("limited") ? "auto" : null, limit_tokens: null },
+    "a-slotb": { five_h: 420000, seven_d: 2100000, limited_until: null, limit_source: null, limit_tokens: 1400000 },
+  };
+  for (const a of accounts) {
+    a.usage = usageOf[a.account.id] || (a.account.kind === "windows_user" ? null : { five_h: 0, seven_d: 0, limited_until: null, limit_source: null, limit_tokens: null });
+  }
   // English sample names for ?lang=en (README screenshots); the Indonesian ones are what the tests use.
   if (params.get("lang") === "en") {
     const en = { Utama: "Main", Kantor: "Work", Klien: "Client", Riset: "Research" };
@@ -67,6 +75,8 @@
     },
     async open_update_notes() {},
     async open_link_settings() {},
+    async mark_limited({ id, until }) { const u = find(id).usage; u.limited_until = until; u.limit_source = "manual"; },
+    async clear_limit({ id }) { const u = find(id).usage; u.limited_until = null; u.limit_source = null; },
     // ?sessions=0: no sessions; ?continue=newer: the destination has a newer copy.
     async list_sessions() {
       if (params.get("sessions") === "0") return [];

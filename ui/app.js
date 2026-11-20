@@ -90,6 +90,21 @@
     (first || $("add-open")).focus();
   }
 
+  // ---------- usage ----------
+  const numberFmt = () => new Intl.NumberFormat(window.LANG === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
+  function tokens(n) {
+    if (n < 1000) return String(n);
+    if (n < 1e6) return numberFmt().format(n / 1000) + " " + t("tok_k");
+    return numberFmt().format(n / 1e6) + " " + t("tok_m");
+  }
+  const maxFiveH = () => Math.max(0, ...accounts.filter((x) => x.usage).map((x) => x.usage.five_h));
+  const clock = (ms) => new Date(ms).toLocaleTimeString(window.LANG === "id" ? "id-ID" : "en-US", { hour: "2-digit", minute: "2-digit" });
+  function left(ms) {
+    const min = Math.max(0, Math.ceil((ms - Date.now()) / 60000));
+    return t("left", { h: Math.floor(min / 60), m: min % 60 });
+  }
+  setInterval(() => { if (accounts.some((x) => x.usage && x.usage.limited_until)) render(); }, 30000);
+
   function renderAccounts() {
     const list = $("accounts");
     const focusedId = document.activeElement && document.activeElement.closest(".account")?.dataset.id;
@@ -110,6 +125,27 @@
           <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>
         </button>`;
       li.querySelector(".name").textContent = a.account.label;
+      if (a.usage) {
+        // Recent Claude Code use, or until when the account is at its limit.
+        const usage = document.createElement("span");
+        usage.className = "usage num"; usage.id = "usage-" + a.account.id;
+        const limited = a.usage.limited_until && a.usage.limited_until > Date.now();
+        li.classList.toggle("is-limited", !!limited);
+        if (limited) {
+          usage.textContent = t("limited", { time: clock(a.usage.limited_until), left: left(a.usage.limited_until) });
+        } else {
+          const bar = document.createElement("span");
+          bar.className = "use-bar"; bar.setAttribute("aria-hidden", "true");
+          const fill = document.createElement("span");
+          const scale = a.usage.limit_tokens || maxFiveH() || 1;
+          fill.style.width = Math.min(100, Math.round((a.usage.five_h / scale) * 100)) + "%";
+          bar.append(fill);
+          let text = t("usage_5h", { n: tokens(a.usage.five_h) });
+          if (a.usage.limit_tokens) text += " · " + t("usage_pct", { p: Math.round((a.usage.five_h / a.usage.limit_tokens) * 100) });
+          usage.append(bar, document.createTextNode(text));
+        }
+        li.querySelector(".who").append(usage);
+      }
       li.querySelector(".state-text").textContent = stateText(a);
       // Which kind of account this is, read with the status through aria-describedby (Main has none).
       const kind = { same_user: t("kind_same"), windows_user: t("kind_windows") }[a.account.kind];
@@ -118,6 +154,7 @@
       const problem = a.state === "Problem";
       primary.textContent = problem ? t("menu_repair") : running ? t("show") : t("open");
       primary.setAttribute("aria-label", `${primary.textContent} ${a.account.label}`);
+      if (a.usage) primary.setAttribute("aria-describedby", `${stateId} usage-${a.account.id} usage-help`);
       primary.disabled = a.state === "Opening";
       const kebab = li.querySelector('[data-role="menu"]');
       kebab.setAttribute("aria-label", t("options_for", { label: a.account.label }));
@@ -171,7 +208,21 @@
     clearError();
     const label = a.account.label;
     try {
-      if (action === "continue") {
+      if (action === "mark") {
+        const def = new Date(Date.now() + 5 * 3600000);
+        const hhmm = String(def.getHours()).padStart(2, "0") + ":" + String(def.getMinutes()).padStart(2, "0");
+        const value = await confirmDialog({ title: t("mark_title", { label }), body: t("mark_body"), ok: t("mark_ok"), input: hhmm, inputLabel: t("mark_label") });
+        if (value === null) return;
+        const m = /^(\d{1,2})[:.](\d{2})$/.exec(value.trim());
+        if (!m || +m[1] > 23 || +m[2] > 59) return showError({ message_id: "err.mark_time" });
+        const until = new Date(); until.setHours(+m[1], +m[2], 0, 0);
+        if (until.getTime() <= Date.now()) until.setDate(until.getDate() + 1);
+        await invoke("mark_limited", { id: a.account.id, until: until.getTime() });
+        await refresh();
+      } else if (action === "unmark") {
+        await invoke("clear_limit", { id: a.account.id });
+        await refresh();
+      } else if (action === "continue") {
         await continueSession(a);
       } else if (action === "close") {
         await invoke("close_account", { id: a.account.id });
@@ -221,6 +272,10 @@
     // Continue a session elsewhere: Main and this user's slots, when another of them exists.
     const canContinue = (x) => x.account.kind === "main" || x.account.kind === "same_user";
     if (canContinue(a) && accounts.some((x) => x.account.id !== a.account.id && canContinue(x))) items.push(["continue", t("menu_continue")]);
+    if (a.usage) {
+      const manual = a.usage.limit_source === "manual" && a.usage.limited_until > Date.now();
+      items.push(manual ? ["unmark", t("menu_unmark")] : ["mark", t("menu_mark")]);
+    }
     if (a.account.kind !== "main") items.push(["import", t("menu_import")], ["remove", t("menu_remove")]);
     menu.replaceChildren(...items.map(([action, text]) => {
       const b = document.createElement("button");
@@ -261,7 +316,8 @@
   });
 
   // ---------- dialog ----------
-  function confirmDialog({ title, body, ok, danger, input }) {
+  function confirmDialog({ title, body, ok, danger, input, inputLabel }) {
+    document.querySelector('#confirm-field label').textContent = inputLabel || t("rename_label");
     const dlg = $("confirm");
     const opener = document.activeElement;
     $("confirm-title").textContent = title;
