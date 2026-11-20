@@ -59,11 +59,20 @@ account open at once, each in its own window, while your skills, plugins and mem
    It installs for all users into `Program Files` (one admin prompt).
 3. Start **Claude Switcher** from the Start menu. Its icon appears in the tray.
 
-> **SmartScreen warning?** Code signing through the SignPath Foundation is being set up; until then
-> the installer is unsigned and Windows may say it is from an unknown publisher. Choose
-> **More info → Run anyway**, or build it yourself (below). Every release lists the SHA-256 of the
-> installer, and from 0.2.0 carries a GitHub build attestation —
-> see [how to check a download](docs/CODE-SIGNING.md#checking-a-download).
+> **"Windows protected your PC" / Unknown publisher?** The installer is not code-signed yet, so
+> Microsoft Defender SmartScreen does not know it. It shows this for any new unsigned download, and
+> each release is a new file, so the warning comes back with every version. It does not mean a
+> virus was found.
+>
+> - To install anyway: **More info → Run anyway**.
+> - To be sure the file is ours: compare its SHA-256 with `SHA256SUMS.txt` in the release, or check
+>   its GitHub build attestation ([how to check a download](docs/CODE-SIGNING.md#checking-a-download)).
+>   In PowerShell: `Get-FileHash .\Claude-Switcher_*_x64-setup.exe`
+> - Only the first install asks: updates through **Update** in the panel are downloaded by the app,
+>   checked against our update key, and installed without this warning.
+>
+> Signing needs a certificate: the free SignPath Foundation one asks for more public adoption first,
+> so the project will reapply as it grows. You can also build it yourself (below).
 
 **Requirements:** Windows 10 or 11 (x64) and Claude Desktop (the Microsoft Store / MSIX build).
 

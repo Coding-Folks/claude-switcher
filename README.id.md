@@ -53,11 +53,22 @@ dan memory tetap dipakai bersama.
    Aplikasi terpasang untuk semua user di `Program Files` (satu kali persetujuan admin).
 3. Buka **Claude Switcher** dari Start Menu. Ikonnya muncul di tray.
 
-> **Muncul peringatan SmartScreen?** Tanda tangan kode lewat SignPath Foundation sedang disiapkan.
-> Sampai aktif, installer belum ditandatangani, jadi Windows mungkin menyebut penerbitnya tidak
-> dikenal. Pilih **More info → Run anyway**, atau build sendiri dari kode sumber. Setiap rilis
-> mencantumkan SHA-256 installer, dan mulai 0.2.0 juga atestasi build GitHub. Lihat
-> [cara memeriksa unduhan](docs/CODE-SIGNING.md#checking-a-download).
+> **Muncul "Windows protected your PC" / Unknown publisher?** Installer ini belum ditandatangani
+> (code signing), jadi Microsoft Defender SmartScreen belum mengenalnya. Peringatan ini muncul untuk
+> setiap unduhan baru yang belum ditandatangani, dan tiap rilis adalah file baru, jadi peringatannya
+> muncul lagi di setiap versi. Ini **bukan** tanda ditemukan virus.
+>
+> - Untuk tetap memasang: **More info → Run anyway**.
+> - Untuk memastikan file ini memang dari kami: cocokkan SHA-256-nya dengan `SHA256SUMS.txt` di
+>   halaman rilis, atau periksa atestasi build GitHub-nya
+>   ([cara memeriksa unduhan](docs/CODE-SIGNING.md#checking-a-download)). Di PowerShell:
+>   `Get-FileHash .\Claude-Switcher_*_x64-setup.exe`
+> - Hanya pemasangan pertama yang bertanya: pembaruan lewat **Perbarui** di panel diunduh oleh
+>   aplikasi, diperiksa dengan kunci pembaruan kami, dan dipasang tanpa peringatan ini.
+>
+> Tanda tangan butuh sertifikat: sertifikat gratis dari SignPath Foundation mensyaratkan proyek yang
+> sudah lebih dikenal luas, jadi kami akan mendaftar ulang seiring proyek berkembang. Anda juga bisa
+> build sendiri dari kode sumber.
 
 **Kebutuhan:** Windows 10 atau 11 (x64) dan Claude Desktop versi Microsoft Store / MSIX.
 

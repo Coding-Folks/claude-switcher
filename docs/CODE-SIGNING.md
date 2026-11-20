@@ -6,8 +6,9 @@ Nobody signs a build on their own computer.
 > Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 > [SignPath Foundation](https://signpath.org).
 >
-> *Until our SignPath Foundation application is approved, installers are unsigned; see
-> [Checking a download](#checking-a-download).*
+> *Not active yet: the SignPath Foundation reviewed our application in November 2026 and asked for
+> more public adoption first (stars, contributors, independent mentions); we will reapply. Until
+> then installers are unsigned; see [Checking a download](#checking-a-download).*
 
 ## What is signed
 
