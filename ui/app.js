@@ -29,6 +29,7 @@
     renderAccounts();
     $("autostart").checked = !!settings.autostart;
     renderUpdateChecks(settings.update_checks);
+    renderLinkAsk(settings.link_handler);
     fitWindow();
   }
 
@@ -359,8 +360,9 @@
     // Grow with the content up to the screen's work area (spec said 480px; too short once the add form opens).
     const max = Math.max(480, (window.screen.availHeight || 480) - 32);
     const h = Math.min(max, Math.ceil(document.querySelector(".panel").scrollHeight));
-    const { LogicalSize, getCurrentWindow } = tauri.window;
-    getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
+    // Rust resizes it and keeps the edge next to the taskbar in place (a plain setSize keeps the
+    // top-left corner, so a shorter panel drifted up, away from the tray).
+    invoke("fit_panel", { height: h }).catch(() => {});
   }
 
   // ---------- update ----------
@@ -406,6 +408,16 @@
   $("updates-yes").addEventListener("click", () => setUpdateChecks(true, true));
   $("updates-no").addEventListener("click", () => setUpdateChecks(false, true));
   $("updates").addEventListener("change", (e) => setUpdateChecks(e.target.checked, false));
+
+  // ---------- claude: links ----------
+  // Claude Desktop claims claude: links for itself; the user has to pick Claude Switcher once.
+  let linkLater = false;
+  function renderLinkAsk(mode) { $("link-ask").hidden = linkLater || mode !== "other"; }
+  $("link-fix").addEventListener("click", () => invoke("open_link_settings").catch(showError));
+  $("link-later").addEventListener("click", () => {
+    linkLater = true; renderLinkAsk(settings.link_handler);
+    $("add-open").focus(); // the card is gone; keep focus in the panel
+  });
 
   // ---------- search ----------
   $("search").addEventListener("input", () => renderAccounts());

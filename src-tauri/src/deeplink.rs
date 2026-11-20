@@ -140,25 +140,103 @@ pub fn main_open_url(args: &[String]) -> i32 {
     }
 }
 
-/// Makes Claude Switcher the `claude://` handler for this user, if it is not already.
-/// Returns true when the registry was changed.
+/// The ProgID through which Windows can hand `claude:` links to Claude Switcher.
+pub const PROG_ID: &str = "ClaudeSwitcher.claude";
+const CAPABILITIES: &str = r"Software\CodingFolks\ClaudeSwitcher\Capabilities";
+
+/// One registry value under HKCU.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegValue {
+    pub key: String,
+    pub name: &'static str,
+    pub value: String,
+}
+
+/// Everything that lets Windows offer Claude Switcher for `claude:` links (Settings → Default apps →
+/// link type CLAUDE) and run it with `--open-url`. Claude Desktop registers `claude:` in its MSIX
+/// manifest, and Windows prefers that over a plain `Software\Classes\claude` key, so the user has to
+/// pick Claude Switcher once; the classic key stays as the fallback where nothing else claims it.
+pub fn registration(exe: &Path) -> Vec<RegValue> {
+    let cmd = handler_command(exe);
+    let icon = format!("\"{}\",0", exe.display());
+    let prog = format!(r"Software\Classes\{PROG_ID}");
+    let v = |key: &str, name: &'static str, value: &str| RegValue {
+        key: key.to_string(),
+        name,
+        value: value.to_string(),
+    };
+    vec![
+        v(&prog, "", "URL:claude (Claude Switcher)"),
+        v(&prog, "URL Protocol", ""),
+        v(&format!(r"{prog}\DefaultIcon"), "", &icon),
+        v(&format!(r"{prog}\shell\open\command"), "", &cmd),
+        v(CAPABILITIES, "ApplicationName", "Claude Switcher"),
+        v(
+            CAPABILITIES,
+            "ApplicationDescription",
+            "Opens Claude sign-in links in the account that started the sign-in.",
+        ),
+        v(
+            &format!(r"{CAPABILITIES}\URLAssociations"),
+            "claude",
+            PROG_ID,
+        ),
+        v(
+            r"Software\RegisteredApplications",
+            "Claude Switcher",
+            CAPABILITIES,
+        ),
+        v(PROTOCOL_KEY, "", "URL:claude"),
+        v(PROTOCOL_KEY, "URL Protocol", ""),
+        v(&format!(r"{PROTOCOL_KEY}\shell\open\command"), "", &cmd),
+    ]
+}
+
+/// Writes whatever of `registration` is missing or different. Returns true when something changed.
 pub fn ensure_handler(exe: &Path) -> std::io::Result<bool> {
     use winreg::enums::HKEY_CURRENT_USER;
-    let want = handler_command(exe);
     let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
-    let current: Option<String> = hkcu
-        .open_subkey(format!(r"{PROTOCOL_KEY}\shell\open\command"))
-        .and_then(|k| k.get_value(""))
-        .ok();
-    if current.as_deref() == Some(want.as_str()) {
-        return Ok(false);
+    let mut changed = false;
+    for r in registration(exe) {
+        let current: Option<String> = hkcu
+            .open_subkey(&r.key)
+            .and_then(|k| k.get_value(r.name))
+            .ok();
+        if current.as_deref() != Some(r.value.as_str()) {
+            let (key, _) = hkcu.create_subkey(&r.key)?;
+            key.set_value(r.name, &r.value)?;
+            changed = true;
+        }
     }
-    let (key, _) = hkcu.create_subkey(PROTOCOL_KEY)?;
-    key.set_value("", &"URL:claude")?;
-    key.set_value("URL Protocol", &"")?;
-    let (cmd, _) = key.create_subkey(r"shell\open\command")?;
-    cmd.set_value("", &want)?;
-    Ok(true)
+    Ok(changed)
+}
+
+/// The command Windows actually runs for a `claude:` link (the user's choice or the packaged app's).
+pub fn effective_command() -> Option<String> {
+    use windows::core::{HSTRING, PWSTR};
+    use windows::Win32::UI::Shell::{AssocQueryStringW, ASSOCF_IS_PROTOCOL, ASSOCSTR_COMMAND};
+    let mut buf = vec![0u16; 2048];
+    let mut len = buf.len() as u32;
+    unsafe {
+        AssocQueryStringW(
+            ASSOCF_IS_PROTOCOL,
+            ASSOCSTR_COMMAND,
+            &HSTRING::from("claude"),
+            None,
+            Some(PWSTR(buf.as_mut_ptr())),
+            &mut len,
+        )
+    }
+    .ok()
+    .ok()?;
+    let end = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..end]))
+}
+
+/// Whether a handler command runs this exe (Windows may change the case of the path).
+pub fn handler_is_ours(command: &str, exe: &Path) -> bool {
+    let exe = exe.to_string_lossy().to_lowercase();
+    !command.is_empty() && command.to_lowercase().contains(&exe)
 }
 
 #[cfg(test)]
@@ -237,5 +315,64 @@ mod tests {
             )),
             r#""C:\Program Files\Claude Switcher\claude-switcher.exe" --open-url "%1""#
         );
+    }
+
+    #[test]
+    fn switcher_registers_as_an_app_that_can_open_claude_links() {
+        let exe = Path::new(r"C:\Program Files\Claude Switcher\claude-switcher.exe");
+        let reg = registration(exe);
+        let has = |key: &str, name: &str, value: &str| {
+            reg.iter()
+                .any(|r| r.key == key && r.name == name && r.value == value)
+        };
+        let cmd = handler_command(exe);
+        assert!(
+            has(
+                r"Software\Classes\ClaudeSwitcher.claude\shell\open\command",
+                "",
+                &cmd
+            ),
+            "{reg:#?}"
+        );
+        assert!(has(
+            r"Software\Classes\ClaudeSwitcher.claude",
+            "URL Protocol",
+            ""
+        ));
+        assert!(has(
+            r"Software\CodingFolks\ClaudeSwitcher\Capabilities\URLAssociations",
+            "claude",
+            "ClaudeSwitcher.claude"
+        ));
+        assert!(has(
+            r"Software\CodingFolks\ClaudeSwitcher\Capabilities",
+            "ApplicationName",
+            "Claude Switcher"
+        ));
+        assert!(has(
+            r"Software\RegisteredApplications",
+            "Claude Switcher",
+            r"Software\CodingFolks\ClaudeSwitcher\Capabilities"
+        ));
+        // The classic handler stays as a fallback for Windows versions without the packaged one.
+        assert!(has(r"Software\Classes\claude\shell\open\command", "", &cmd));
+    }
+
+    #[test]
+    fn the_effective_handler_is_ours_only_when_it_runs_this_exe() {
+        let exe = Path::new(r"C:\Program Files\Claude Switcher\claude-switcher.exe");
+        assert!(handler_is_ours(
+            r#""C:\Program Files\Claude Switcher\claude-switcher.exe" --open-url "%1""#,
+            exe
+        ));
+        assert!(handler_is_ours(
+            r#""c:\program files\claude switcher\CLAUDE-SWITCHER.EXE" --open-url "%1""#,
+            exe
+        ));
+        assert!(!handler_is_ours(
+            r#""C:\Program Files\WindowsApps\Claude_6.28899.2.0_x64__pzs8sxrjxfjjc\app\claude.exe" -- "%1""#,
+            exe
+        ));
+        assert!(!handler_is_ours("", exe));
     }
 }

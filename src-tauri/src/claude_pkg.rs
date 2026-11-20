@@ -52,7 +52,7 @@ pub fn detect() -> AppResult<ClaudePkg> {
     .join("WindowsPowerShell")
     .join("v1.0")
     .join("powershell.exe");
-    let out = std::process::Command::new(ps)
+    let out = crate::proc::console(ps)
         .args(["-NoProfile", "-NonInteractive", "-Command",
                "Get-AppxPackage -Name Claude | Select-Object Name,PackageFamilyName,InstallLocation | ConvertTo-Json -Compress"])
         .output()?;

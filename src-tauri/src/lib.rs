@@ -11,6 +11,7 @@ pub mod launcher;
 pub mod monitor;
 pub mod naming;
 pub mod platform;
+pub mod proc;
 pub mod share;
 pub mod slot;
 pub mod store;
@@ -126,6 +127,8 @@ pub fn run() {
             commands::install_update,
             commands::open_update_notes,
             commands::set_update_checks,
+            commands::fit_panel,
+            commands::open_link_settings,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

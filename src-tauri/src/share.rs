@@ -4,7 +4,6 @@
 use crate::error::{AppError, AppResult};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// The built-in Users group, in icacls' `*SID` form (used by tests; real calls pass a user name).
 pub const USERS_SID: &str = "*S-1-5-32-545";
@@ -16,7 +15,7 @@ fn icacls(args: &[&std::ffi::OsStr]) -> AppResult<String> {
     let system = std::env::var_os("SystemRoot")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-    let out = Command::new(system.join("System32").join("icacls.exe"))
+    let out = crate::proc::console(system.join("System32").join("icacls.exe"))
         .args(args)
         .output()?;
     if !out.status.success() {
