@@ -5,6 +5,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Usage per account, to pick one that is still safe.** Each Main and "This Windows user" row shows
+  its Claude Code (and Cowork) token use in the last 5 hours, read from the transcripts on this
+  computer; no login token is touched and nothing is sent anywhere. When Claude reports a usage limit
+  the row says **Limit · back 19:00 (2 h 14 m)**; you can also mark it by hand (**⋯ → Mark as at its
+  limit…**). After a limit, the panel learns that account's limit and shows **± N% of the limit**. A
+  session continued in another account counts for the account that used it at the time.
+- **Settings** (gear in the header): Start with Windows, update checks with **Check now** and
+  **Update now**, language, the Google sign-in link setting (where **Later** leads), and **About &
+  contributing** with links to report a problem or help.
+
+### Changed
+
+- The list view keeps only the accounts; the switches and language moved to Settings.
+
 ## [0.2.2] — 2026-11-20
 
 ### Added

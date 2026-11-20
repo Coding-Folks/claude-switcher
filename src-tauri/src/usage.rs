@@ -1,0 +1,849 @@
+//! How much each account used Claude Code lately, and whether it hit its usage limit, read from the
+//! shared transcripts in `~/.claude/projects` (nothing is asked from Anthropic, no login token is
+//! touched). Each assistant message carries a `timestamp` and `message.usage`; an API error carries
+//! `isApiErrorMessage` and `error`. Sums are estimates: Chat is not on this computer, and cache reads
+//! count for a tenth.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+/// Cache reads cost far less of the usage limit than new tokens: they count for this much.
+pub const CACHE_READ_WEIGHT: f64 = 0.1;
+const HOUR: i64 = 3_600_000;
+const DAY: i64 = 24 * HOUR;
+/// Claude's usage window.
+pub const WINDOW: i64 = 5 * HOUR;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Event {
+    pub at_ms: i64,
+    pub tokens: u64,
+    /// One API response (its message id and request id): Claude Code writes a line per content
+    /// block, each repeating the response's usage, so a response counts once. 0 = no id.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub key: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LimitHit {
+    pub at_ms: i64,
+    pub until_ms: i64,
+    /// The weekly limit (lifts on a date), not the five-hour one.
+    #[serde(default)]
+    pub weekly: bool,
+}
+
+/// FNV-1a: a stable key for a response id (the same across runs, unlike `DefaultHasher`).
+fn fnv(parts: &[&str]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in parts
+        .iter()
+        .flat_map(|p| p.bytes().chain(std::iter::once(0)))
+    {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h.max(1)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Parsed {
+    Usage(Event),
+    Limit(LimitHit),
+}
+
+/// This computer's offset from UTC now, in minutes (for "resets 7pm").
+fn local_offset_min() -> i32 {
+    chrono::Local::now().offset().local_minus_utc() / 60
+}
+
+/// One transcript line: a message's token use, a usage-limit error, or nothing.
+pub fn parse_line(line: &str) -> Option<Parsed> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let at = chrono::DateTime::parse_from_rfc3339(v.get("timestamp")?.as_str()?)
+        .ok()?
+        .timestamp_millis();
+    if v.get("isApiErrorMessage").and_then(Value::as_bool) == Some(true) {
+        let error = v
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_lowercase();
+        let content = v.pointer("/message/content");
+        let text = match content {
+            Some(Value::Array(parts)) => parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+            Some(Value::String(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let lower = text.to_lowercase();
+        let is_limit =
+            error.contains("rate_limit") || (lower.contains("limit") && lower.contains("reset"));
+        return is_limit.then(|| {
+            let until = reset_time(&text, at, local_offset_min());
+            let weekly = lower.contains("week") || until - at > DAY;
+            Parsed::Limit(LimitHit {
+                at_ms: at,
+                until_ms: if weekly && until == at + WINDOW {
+                    at + 7 * DAY
+                } else {
+                    until
+                },
+                weekly,
+            })
+        });
+    }
+    let u = v.pointer("/message/usage")?;
+    let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
+    let tokens = n("input_tokens")
+        + n("cache_creation_input_tokens")
+        + n("output_tokens")
+        + (n("cache_read_input_tokens") as f64 * CACHE_READ_WEIGHT).round() as u64;
+    let id = v
+        .pointer("/message/id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let req = v.get("requestId").and_then(Value::as_str).unwrap_or("");
+    let key = if id.is_empty() && req.is_empty() {
+        0
+    } else {
+        fnv(&[id, req])
+    };
+    Some(Parsed::Usage(Event {
+        at_ms: at,
+        tokens,
+        key,
+    }))
+}
+
+/// When a limit lifts, from its message: "…|<epoch seconds>", "resets 7pm", "resets 7:30 pm",
+/// "resets at 19:00" (a clock time already past means tomorrow), "resets Nov 25, 9am" (a date
+/// already past means next year); else five hours after the error.
+pub fn reset_time(text: &str, at_ms: i64, tz_offset_min: i32) -> i64 {
+    if let Some(i) = text.rfind('|') {
+        let digits: String = text[i + 1..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if digits.len() >= 10 {
+            if let Ok(s) = digits.parse::<i64>() {
+                return s * 1000;
+            }
+        }
+    }
+    let lower = text.to_lowercase();
+    if let Some(i) = lower.find("reset") {
+        let rest = lower[i + 5..].trim_start_matches('s').trim_start();
+        let rest = rest.strip_prefix("at").unwrap_or(rest).trim_start();
+        // "nov 25, 9am": a month and a day before the clock time
+        const MONTHS: [&str; 12] = [
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        ];
+        let mut date: Option<(u32, u32)> = None;
+        let mut rest = rest;
+        if let Some(mi) = MONTHS.iter().position(|m| rest.starts_with(m)) {
+            let after = rest
+                .trim_start_matches(|c: char| c.is_ascii_alphabetic())
+                .trim_start();
+            let day: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(d) = day.parse::<u32>() {
+                date = Some((mi as u32 + 1, d));
+                rest = after[day.len()..].trim_start_matches([',', ' ']);
+                rest = rest.strip_prefix("at").unwrap_or(rest).trim_start();
+            }
+        }
+        let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(mut h) = num.parse::<i64>() {
+            let mut tail = &rest[num.len()..];
+            let mut m = 0;
+            if let Some(after) = tail.strip_prefix(':') {
+                let mm: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+                m = mm.parse().unwrap_or(0);
+                tail = &after[mm.len()..];
+            }
+            let tail = tail.trim_start();
+            if tail.starts_with("pm") && h < 12 {
+                h += 12;
+            } else if tail.starts_with("am") && h == 12 {
+                h = 0;
+            }
+            if h < 24 && m < 60 {
+                let off = tz_offset_min as i64 * 60_000;
+                let local = at_ms + off;
+                if let Some((mon, day)) = date {
+                    use chrono::Datelike;
+                    let year =
+                        chrono::DateTime::from_timestamp_millis(local).map_or(1970, |d| d.year());
+                    let at_year = |y: i32| {
+                        chrono::NaiveDate::from_ymd_opt(y, mon, day)
+                            .and_then(|d| d.and_hms_opt(h as u32, m as u32, 0))
+                            .map(|t| t.and_utc().timestamp_millis())
+                    };
+                    if let Some(mut cand) = at_year(year) {
+                        if cand <= local {
+                            cand = at_year(year + 1).unwrap_or(cand);
+                        }
+                        return cand - off;
+                    }
+                }
+                let mut cand = local - local.rem_euclid(DAY) + h * HOUR + m * 60_000;
+                if cand <= local {
+                    cand += DAY;
+                }
+                return cand - off;
+            }
+        }
+    }
+    at_ms + WINDOW
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct FileState {
+    offset: u64,
+    events: Vec<Event>,
+    limits: Vec<LimitHit>,
+}
+
+/// Token use and limits over a window, for one account's transcripts.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Totals {
+    pub five_h: u64,
+    pub seven_d: u64,
+    pub limited_until: Option<i64>,
+    /// When the limit in force was hit, and the five-hour use at that moment (what the limit was).
+    pub limit_hit_at: Option<i64>,
+    pub five_h_at_hit: u64,
+    /// The limit in force is the weekly one.
+    pub weekly: bool,
+}
+
+/// Reads transcripts incrementally (each file from where it stopped), keeping the last week.
+pub struct Tracker {
+    cache: PathBuf,
+    files: HashMap<String, FileState>,
+    /// Something changed since the last save.
+    dirty: bool,
+}
+
+impl Tracker {
+    pub fn new(cache: PathBuf) -> Self {
+        let files = std::fs::read_to_string(&cache)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        Self {
+            cache,
+            files,
+            dirty: false,
+        }
+    }
+
+    /// Forgets files no account lists any more, and events older than a week (and a day).
+    pub fn prune(&mut self, now_ms: i64, keep: &[PathBuf]) {
+        let keep: std::collections::HashSet<String> = keep
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let before = (self.files.len(), self.kept_events());
+        self.files.retain(|k, _| keep.contains(k));
+        for st in self.files.values_mut() {
+            st.events.retain(|e| e.at_ms >= now_ms - 8 * DAY);
+            st.limits.retain(|l| l.at_ms >= now_ms - 8 * DAY);
+        }
+        if (self.files.len(), self.kept_events()) != before {
+            self.dirty = true;
+        }
+    }
+
+    /// How many token events are kept (for tests and the cache size).
+    pub fn kept_events(&self) -> usize {
+        self.files.values().map(|f| f.events.len()).sum()
+    }
+
+    /// Reads what was added to each file since the last scan. A last line without its newline is
+    /// being written: it is left for the next scan.
+    pub fn scan(&mut self, files: &[PathBuf]) {
+        use std::io::{Read, Seek, SeekFrom};
+        for path in files {
+            let key = path.to_string_lossy().into_owned();
+            let Ok(mut f) = std::fs::File::open(path) else {
+                continue;
+            };
+            let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+            let st = self.files.entry(key).or_default();
+            if len < st.offset {
+                *st = FileState::default(); // rewritten: start again
+            }
+            if len == st.offset || f.seek(SeekFrom::Start(st.offset)).is_err() {
+                continue;
+            }
+            let mut buf = Vec::new();
+            if f.read_to_end(&mut buf).is_err() {
+                continue;
+            }
+            let Some(end) = buf.iter().rposition(|b| *b == b'\n') else {
+                continue;
+            };
+            for line in String::from_utf8_lossy(&buf[..end]).lines() {
+                match parse_line(line) {
+                    Some(Parsed::Usage(e)) => st.events.push(e),
+                    Some(Parsed::Limit(l)) => st.limits.push(l),
+                    None => {}
+                }
+            }
+            st.offset += end as u64 + 1;
+            self.dirty = true;
+            // Keep a week (and a day to spare) after the newest thing seen in this file.
+            let newest = st
+                .events
+                .iter()
+                .map(|e| e.at_ms)
+                .chain(st.limits.iter().map(|l| l.at_ms))
+                .max();
+            if let Some(newest) = newest {
+                st.events.retain(|e| e.at_ms >= newest - 8 * DAY);
+                st.limits.retain(|l| l.at_ms >= newest - 8 * DAY);
+            }
+        }
+    }
+
+    pub fn totals(&self, files: &[PathBuf], now_ms: i64) -> Totals {
+        let all: Vec<(PathBuf, i64, i64)> = files
+            .iter()
+            .map(|f| (f.clone(), i64::MIN, i64::MAX))
+            .collect();
+        self.totals_in(&all, now_ms)
+    }
+
+    /// Like `totals`, counting from each file only what happened in `[start, end)` (the time this
+    /// account owned that session).
+    pub fn totals_in(&self, files: &[(PathBuf, i64, i64)], now_ms: i64) -> Totals {
+        let mut t = Totals::default();
+        // A response counts once, however many lines (or files, after a resume) repeat it.
+        let mut by_key: HashMap<u64, Event> = HashMap::new();
+        let mut events: Vec<Event> = Vec::new();
+        let mut hit: Option<LimitHit> = None;
+        for (path, start, end) in files {
+            let Some(st) = self.files.get(&*path.to_string_lossy()) else {
+                continue;
+            };
+            let owned = |at: i64| at >= *start && at < *end;
+            for e in st.events.iter().filter(|e| owned(e.at_ms)) {
+                if e.key == 0 {
+                    events.push(*e);
+                } else {
+                    let kept = by_key.entry(e.key).or_insert(*e);
+                    kept.tokens = kept.tokens.max(e.tokens);
+                }
+            }
+            for l in st.limits.iter().filter(|l| owned(l.at_ms)) {
+                if l.until_ms > now_ms && l.at_ms <= now_ms && hit.is_none_or_later(l) {
+                    hit = Some(*l);
+                }
+            }
+        }
+        events.extend(by_key.into_values());
+        let in_window = |e: &Event, at: i64, len: i64| e.at_ms <= at && e.at_ms > at - len;
+        for e in &events {
+            if in_window(e, now_ms, 7 * DAY) {
+                t.seven_d += e.tokens;
+            }
+            if in_window(e, now_ms, WINDOW) {
+                t.five_h += e.tokens;
+            }
+        }
+        if let Some(l) = hit {
+            t.limited_until = Some(l.until_ms);
+            t.limit_hit_at = Some(l.at_ms);
+            t.weekly = l.weekly;
+            t.five_h_at_hit = events
+                .iter()
+                .filter(|e| in_window(e, l.at_ms, WINDOW))
+                .map(|e| e.tokens)
+                .sum();
+        }
+        t
+    }
+
+    /// Writes the offsets and the kept events, so a restart does not read everything again; only
+    /// when something changed.
+    pub fn save(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.dirty = false;
+        if let Some(dir) = self.cache.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Ok(json) = serde_json::to_string(&self.files) {
+            let tmp = self.cache.with_extension("json.tmp");
+            if std::fs::write(&tmp, json).is_ok() {
+                let _ = std::fs::rename(&tmp, &self.cache);
+            }
+        }
+    }
+}
+
+/// An account id and the transcript ids it lists, each with the times it was continued there
+/// (empty: it had the session from the start).
+pub type SessionOwners = (String, Vec<(String, Vec<i64>)>);
+
+/// Who owned each session when: for every transcript id listed by several accounts, an account owns
+/// it from each time it arrived there (or from the start when it has no such time) until the next
+/// arrival anywhere. Accounts listing it without a time share that stretch (older copies).
+pub fn ownership(accounts: &[SessionOwners]) -> HashMap<String, Vec<(String, i64, i64)>> {
+    let mut by_cli: HashMap<&str, Vec<(i64, &str)>> = HashMap::new();
+    for (acct, ids) in accounts {
+        for (cli, since) in ids {
+            let entry = by_cli.entry(cli).or_default();
+            if since.is_empty() {
+                entry.push((i64::MIN, acct));
+            }
+            entry.extend(since.iter().map(|s| (*s, acct.as_str())));
+        }
+    }
+    let mut out: HashMap<String, Vec<(String, i64, i64)>> = HashMap::new();
+    for (cli, owners) in by_cli {
+        for (since, acct) in &owners {
+            let end = owners
+                .iter()
+                .map(|(s, _)| *s)
+                .filter(|s| s > since)
+                .min()
+                .unwrap_or(i64::MAX);
+            out.entry(acct.to_string())
+                .or_default()
+                .push((cli.to_string(), *since, end));
+        }
+    }
+    for v in out.values_mut() {
+        v.sort();
+    }
+    out
+}
+
+trait LaterLimit {
+    fn is_none_or_later(&self, l: &LimitHit) -> bool;
+}
+impl LaterLimit for Option<LimitHit> {
+    /// The limit lifting last is the one in force.
+    fn is_none_or_later(&self, l: &LimitHit) -> bool {
+        self.map_or(true, |h| l.until_ms > h.until_ms)
+    }
+}
+
+/// The transcripts of these Claude Code sessions: `projects/*/<id>.jsonl` and their subagents.
+pub fn transcript_files(claude_dir: &Path, cli_ids: &[String]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(projects) = std::fs::read_dir(claude_dir.join("projects")) else {
+        return out;
+    };
+    for p in projects.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        for id in cli_ids {
+            let main = p.join(format!("{id}.jsonl"));
+            if main.is_file() {
+                out.push(main);
+            }
+            if let Ok(subs) = std::fs::read_dir(p.join(id).join("subagents")) {
+                out.extend(
+                    subs.flatten()
+                        .map(|e| e.path())
+                        .filter(|f| f.extension().is_some_and(|x| x == "jsonl")),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// The limit learned from the token use at the last hits (their mean).
+pub fn learned(samples: &[u64]) -> Option<u64> {
+    (!samples.is_empty()).then(|| samples.iter().sum::<u64>() / samples.len() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    const H: i64 = 3_600_000;
+
+    fn tmp() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("cs-usage-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+    fn iso(ms: i64) -> String {
+        chrono::DateTime::from_timestamp_millis(ms)
+            .unwrap()
+            .to_rfc3339()
+    }
+    fn usage_line(ms: i64, input: u64, create: u64, read: u64, out: u64) -> String {
+        serde_json::json!({"type": "assistant", "timestamp": iso(ms), "message": {"role": "assistant",
+            "usage": {"input_tokens": input, "cache_creation_input_tokens": create,
+                      "cache_read_input_tokens": read, "output_tokens": out}}})
+        .to_string()
+    }
+    fn error_line(ms: i64, error: &str, text: &str) -> String {
+        serde_json::json!({"type": "assistant", "timestamp": iso(ms), "isApiErrorMessage": true,
+            "error": error, "message": {"content": [{"type": "text", "text": text}]}})
+        .to_string()
+    }
+    fn append(p: &Path, s: &str) {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn usage_counts_input_cache_creation_output_and_a_tenth_of_cache_reads() {
+        let Some(Parsed::Usage(e)) = parse_line(&usage_line(1_000, 2, 1000, 10_000, 300)) else {
+            panic!("usage expected")
+        };
+        assert_eq!((e.at_ms, e.tokens), (1_000, 2302));
+    }
+
+    #[test]
+    fn lines_without_usage_or_timestamp_are_ignored() {
+        assert!(parse_line(r#"{"type":"user","timestamp":"2026-11-20T01:00:00Z"}"#).is_none());
+        assert!(parse_line(r#"{"message":{"usage":{"output_tokens":5}}}"#).is_none());
+        assert!(parse_line("{ half a line").is_none());
+    }
+
+    #[test]
+    fn a_rate_limit_error_is_a_limit_hit() {
+        let at = 1_795_150_000_000;
+        let l = error_line(
+            at,
+            "rate_limit",
+            "Claude usage limit reached. Your limit resets at 19:00.",
+        );
+        assert!(matches!(parse_line(&l), Some(Parsed::Limit(_))));
+        let l = error_line(at, "", "You've hit your limit · resets 7pm");
+        assert!(matches!(parse_line(&l), Some(Parsed::Limit(_))));
+    }
+
+    #[test]
+    fn an_auth_error_is_not() {
+        let l = error_line(
+            1,
+            "authentication_failed",
+            "Login expired · Please run /login",
+        );
+        assert!(parse_line(&l).is_none());
+    }
+
+    #[test]
+    fn reset_time_reads_12h_24h_and_epoch_forms() {
+        // 2026-11-20 15:00 local, local = UTC+7 (420 min)
+        let at = chrono::DateTime::parse_from_rfc3339("2026-11-20T15:00:00+07:00")
+            .unwrap()
+            .timestamp_millis();
+        let local = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .unwrap()
+                .timestamp_millis()
+        };
+        assert_eq!(
+            reset_time("resets 7pm", at, 420),
+            local("2026-11-20T19:00:00+07:00")
+        );
+        assert_eq!(
+            reset_time("resets 7:30 pm", at, 420),
+            local("2026-11-20T19:30:00+07:00")
+        );
+        assert_eq!(
+            reset_time("Your limit resets at 19:00.", at, 420),
+            local("2026-11-20T19:00:00+07:00")
+        );
+        assert_eq!(
+            reset_time("limit reached|1795150800", at, 420),
+            1_795_150_800_000
+        );
+        assert_eq!(reset_time("limit reached", at, 420), at + 5 * H);
+        // a clock time already past today means tomorrow
+        assert_eq!(
+            reset_time("resets 9am", at, 420),
+            local("2026-11-21T09:00:00+07:00")
+        );
+    }
+
+    #[test]
+    fn totals_sum_5h_and_7d_windows() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 100 * 24 * H;
+        for (ago, t) in [(H, 100), (4 * H, 200), (6 * H, 400), (8 * 24 * H, 800)] {
+            append(&f, &(usage_line(now - ago, 0, 0, 0, t) + "\n"));
+        }
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        let t = tr.totals(std::slice::from_ref(&f), now);
+        assert_eq!((t.five_h, t.seven_d), (300, 700));
+        assert_eq!(t.limited_until, None);
+    }
+
+    #[test]
+    fn a_limit_in_the_past_is_not_current() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 100 * 24 * H;
+        append(
+            &f,
+            &(error_line(now - 6 * H, "rate_limit", "limit reached") + "\n"),
+        ); // reset at now - 1 h
+        append(
+            &f,
+            &(error_line(now - H, "rate_limit", "limit reached") + "\n"),
+        ); // reset at now + 4 h
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        assert_eq!(
+            tr.totals(std::slice::from_ref(&f), now).limited_until,
+            Some(now + 4 * H)
+        );
+        assert_eq!(
+            tr.totals(std::slice::from_ref(&f), now + 5 * H)
+                .limited_until,
+            None
+        );
+    }
+
+    #[test]
+    fn scan_is_incremental_and_waits_for_a_partial_last_line() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 10 * H;
+        append(&f, &(usage_line(now - H, 0, 0, 0, 10) + "\n"));
+        let half = usage_line(now - H, 0, 0, 0, 5);
+        let (a, b) = half.split_at(half.len() / 2);
+        append(&f, a);
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        assert_eq!(tr.totals(std::slice::from_ref(&f), now).five_h, 10);
+        append(&f, &format!("{b}\n"));
+        tr.scan(std::slice::from_ref(&f));
+        tr.scan(std::slice::from_ref(&f)); // nothing new: counted once
+        assert_eq!(tr.totals(std::slice::from_ref(&f), now).five_h, 15);
+    }
+
+    #[test]
+    fn cache_survives_a_restart() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 10 * H;
+        append(&f, &(usage_line(now - H, 0, 0, 0, 10) + "\n"));
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        tr.save();
+        let mut again = Tracker::new(dir.join("cache.json"));
+        again.scan(std::slice::from_ref(&f)); // must not count the same line twice
+        assert_eq!(again.totals(std::slice::from_ref(&f), now).five_h, 10);
+    }
+
+    #[test]
+    fn transcript_files_include_subagents() {
+        let claude = tmp();
+        let p = claude.join("projects").join("E--x");
+        std::fs::create_dir_all(p.join("abc").join("subagents")).unwrap();
+        append(&p.join("abc.jsonl"), "");
+        append(&p.join("abc").join("subagents").join("agent-1.jsonl"), "");
+        append(&p.join("other.jsonl"), "");
+        let mut got = transcript_files(&claude, &["abc".to_string()]);
+        got.sort();
+        assert_eq!(got.len(), 2, "{got:?}");
+    }
+
+    #[test]
+    fn a_continued_session_belongs_to_each_account_from_its_move_on() {
+        let accounts = vec![
+            ("main".to_string(), vec![("c1".to_string(), vec![])]),
+            ("slot".to_string(), vec![("c1".to_string(), vec![5_000])]),
+        ];
+        let own = ownership(&accounts);
+        assert_eq!(own["main"], vec![("c1".to_string(), i64::MIN, 5_000)]);
+        assert_eq!(own["slot"], vec![("c1".to_string(), 5_000, i64::MAX)]);
+    }
+
+    #[test]
+    fn a_session_shared_without_a_move_time_counts_for_both() {
+        let accounts = vec![
+            ("main".to_string(), vec![("c1".to_string(), vec![])]),
+            ("slot".to_string(), vec![("c1".to_string(), vec![])]),
+        ];
+        let own = ownership(&accounts);
+        assert_eq!(own["main"], vec![("c1".to_string(), i64::MIN, i64::MAX)]);
+        assert_eq!(own["slot"], vec![("c1".to_string(), i64::MIN, i64::MAX)]);
+    }
+
+    #[test]
+    fn totals_in_a_time_range_count_only_what_happened_then() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 100 * H;
+        append(&f, &(usage_line(now - 3 * H, 0, 0, 0, 100) + "\n"));
+        append(
+            &f,
+            &(error_line(now - 3 * H, "rate_limit", "limit reached") + "\n"),
+        );
+        append(&f, &(usage_line(now - H, 0, 0, 0, 7) + "\n"));
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        // the account that took the session over 2 hours ago: only the later use, no limit
+        let after = tr.totals_in(&[(f.clone(), now - 2 * H, i64::MAX)], now);
+        assert_eq!((after.five_h, after.limited_until), (7, None));
+        let before = tr.totals_in(&[(f, i64::MIN, now - 2 * H)], now);
+        assert_eq!(before.five_h, 100);
+        assert!(before.limited_until.is_some());
+    }
+
+    fn keyed(ms: i64, id: &str, req: &str, out: u64) -> String {
+        serde_json::json!({"type": "assistant", "timestamp": iso(ms), "requestId": req,
+            "message": {"id": id, "role": "assistant", "usage": {"output_tokens": out}}})
+        .to_string()
+    }
+
+    #[test]
+    fn a_response_split_over_several_lines_counts_once_even_across_files() {
+        let dir = tmp();
+        let (a, b) = (dir.join("a.jsonl"), dir.join("b.jsonl"));
+        let now = 10 * H;
+        for _ in 0..3 {
+            append(&a, &(keyed(now - H, "msg_1", "req_1", 100) + "\n")); // thinking, text, tool_use
+        }
+        append(&a, &(keyed(now - H, "msg_2", "req_2", 5) + "\n"));
+        append(&b, &(keyed(now - H, "msg_1", "req_1", 100) + "\n")); // the same response after a resume
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(&[a.clone(), b.clone()]);
+        assert_eq!(tr.totals(&[a, b], now).five_h, 105);
+    }
+
+    #[test]
+    fn a_weekly_limit_lasts_until_its_date_and_is_not_a_five_hour_one() {
+        let at = chrono::DateTime::parse_from_rfc3339("2026-11-20T10:00:00+07:00")
+            .unwrap()
+            .timestamp_millis();
+        let l = serde_json::json!({"timestamp": iso(at), "isApiErrorMessage": true, "error": "rate_limit",
+            "message": {"content": [{"type": "text", "text": "You've hit your weekly limit · resets Nov 25, 9am (Asia/Jakarta)"}]}})
+        .to_string();
+        let Some(Parsed::Limit(hit)) = parse_line(&l) else {
+            panic!("limit expected")
+        };
+        assert!(hit.weekly);
+        let want = chrono::DateTime::parse_from_rfc3339("2026-11-25T09:00:00+07:00")
+            .unwrap()
+            .timestamp_millis();
+        // the date is read in this PC's time zone; compare the local wall clock
+        let local = |ms: i64| {
+            chrono::DateTime::from_timestamp_millis(ms)
+                .unwrap()
+                .with_timezone(&chrono::Local)
+                .format("%m-%d %H:%M")
+                .to_string()
+        };
+        assert_eq!(
+            local(hit.until_ms),
+            local(want).replace(&local(want), "11-25 09:00")
+        );
+    }
+
+    #[test]
+    fn the_use_at_a_hit_is_measured_at_the_hit_not_later() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let hit = 50 * H;
+        append(&f, &(usage_line(hit - H, 0, 0, 0, 100) + "\n"));
+        append(&f, &(error_line(hit, "rate_limit", "limit reached") + "\n"));
+        append(&f, &(usage_line(hit + H, 0, 0, 0, 7) + "\n")); // e.g. a retry after the reset window moved
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        let t = tr.totals(std::slice::from_ref(&f), hit + 2 * H);
+        assert_eq!(
+            (t.limit_hit_at, t.five_h_at_hit, t.weekly),
+            (Some(hit), 100, false)
+        );
+    }
+
+    #[test]
+    fn old_events_are_dropped_and_vanished_files_forgotten() {
+        let dir = tmp();
+        let (a, b) = (dir.join("a.jsonl"), dir.join("b.jsonl"));
+        let now = 30 * 24 * H;
+        append(&a, &(usage_line(now - 20 * 24 * H, 0, 0, 0, 1) + "\n"));
+        append(&a, &(usage_line(now - H, 0, 0, 0, 2) + "\n"));
+        append(&b, &(usage_line(now - H, 0, 0, 0, 3) + "\n"));
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(&[a.clone(), b.clone()]);
+        tr.prune(now, std::slice::from_ref(&a)); // b is no longer listed by any account
+        assert_eq!(tr.kept_events(), 1);
+    }
+
+    #[test]
+    fn a_session_moved_away_and_back_keeps_each_stretch_with_its_account() {
+        let accounts = vec![
+            ("a".to_string(), vec![("c1".to_string(), vec![0, 9_000])]), // had it, got it back at 9000
+            ("b".to_string(), vec![("c1".to_string(), vec![5_000])]),
+        ];
+        let own = ownership(&accounts);
+        assert_eq!(
+            own["a"],
+            vec![
+                ("c1".to_string(), 0, 5_000),
+                ("c1".to_string(), 9_000, i64::MAX)
+            ]
+        );
+        assert_eq!(own["b"], vec![("c1".to_string(), 5_000, 9_000)]);
+    }
+
+    #[test]
+    fn learned_is_the_mean() {
+        assert_eq!(learned(&[]), None);
+        assert_eq!(learned(&[100, 200, 300]), Some(200));
+    }
+
+    #[test]
+    #[ignore] // live: prints each account's usage from the real transcripts (reads only)
+    fn live_usage_per_account() {
+        let home = PathBuf::from(std::env::var("USERPROFILE").unwrap());
+        let local = home.join(r"AppData\Local");
+        let mut roots = vec![("Main".to_string(), crate::history::sessions_dirs(&local))];
+        if let Ok(slots) = std::fs::read_dir(local.join(r"ClaudeSwitcher\slots")) {
+            for s in slots.flatten() {
+                let r = crate::history::sessions_dirs(&s.path().join("Local"));
+                roots.push((s.file_name().to_string_lossy().into_owned(), r));
+            }
+        }
+        let mut tr = Tracker::new(std::env::temp_dir().join("cs-live-usage-cache.json"));
+        let now = chrono::Utc::now().timestamp_millis();
+        for (name, r) in roots {
+            let ids: Vec<String> = crate::sessions::cli_ids(&r)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            let files = transcript_files(&home.join(".claude"), &ids);
+            tr.scan(&files);
+            let t = tr.totals(&files, now);
+            println!(
+                "{name}: sessions={} files={} 5h={} 7d={} limited={:?}",
+                ids.len(),
+                files.len(),
+                t.five_h,
+                t.seven_d,
+                t.limited_until
+            );
+        }
+    }
+}

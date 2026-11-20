@@ -26,6 +26,15 @@ pub struct Account {
     /// Non-Main accounts: the `#RRGGBB` of their taskbar icon (given once, see `taskbar::next_color`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Token use in the last 5 hours at the last (up to 3) times the account hit its limit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limit_samples: Vec<u64>,
+    /// "Kena limit" set by hand: until when (ms since 1970).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_mark_until: Option<i64>,
+    /// When the last automatic limit learned from was hit (ms), so a restart does not learn it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_learned_at: Option<i64>,
 }
 
 impl Account {
@@ -38,6 +47,9 @@ impl Account {
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: None,
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
+            limit_learned_at: None,
         }
     }
 }
@@ -134,6 +146,9 @@ mod tests {
             created_at: "2026-11-12T08:00:00Z".into(),
             data_root: None,
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
+            limit_learned_at: None,
         }
     }
 

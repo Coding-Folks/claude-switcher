@@ -174,6 +174,18 @@ async fn check(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
     }))
 }
 
+/// "Cek sekarang": checks right away (only when this build has an update key) and offers what it finds.
+pub async fn check_now(app: &AppHandle) -> AppResult<Option<UpdateInfo>> {
+    if pubkey().is_none() {
+        return Err(AppError::new(ErrorCode::Invalid, "err.update_unavailable"));
+    }
+    let found = check(app).await?;
+    if let Some(st) = app.try_state::<UpdateState>() {
+        *st.offered.lock().unwrap() = found.clone();
+    }
+    Ok(found)
+}
+
 /// With consent: a check shortly after start (or within a minute of the user agreeing), then every six
 /// hours; a change redraws the panel.
 pub fn spawn_checks(app: AppHandle, on_change: impl Fn() + Send + 'static) {

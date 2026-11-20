@@ -19,6 +19,7 @@ pub mod store;
 pub mod taskbar;
 pub mod tray;
 pub mod update;
+pub mod usage;
 pub mod vault;
 pub mod winuser;
 
@@ -132,6 +133,10 @@ pub fn run() {
             commands::open_link_settings,
             commands::list_sessions,
             commands::continue_session,
+            commands::mark_limited,
+            commands::clear_limit,
+            commands::open_url,
+            commands::check_update_now,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -193,6 +198,52 @@ pub fn run() {
                     loop {
                         taskbar::tick(&f, &exe, &mut st);
                         std::thread::sleep(std::time::Duration::from_secs(2));
+                    }
+                });
+            }
+            if let Ok(f) = handle.state::<AppState>().flows.clone() {
+                // Recent Claude Code use and limits per account, from the shared transcripts.
+                let h = handle.clone();
+                std::thread::spawn(move || {
+                    let claude = std::env::var_os("USERPROFILE")
+                        .map(PathBuf::from)
+                        .unwrap_or_default()
+                        .join(".claude");
+                    let mut tracker =
+                        usage::Tracker::new(data_dir("LOCALAPPDATA").join("usage-cache.json"));
+                    loop {
+                        let now = chrono::Utc::now().timestamp_millis();
+                        // A continued session belongs to each account from its move on.
+                        let targets: Vec<usage::SessionOwners> = f
+                            .usage_targets()
+                            .into_iter()
+                            .map(|(id, roots)| (id, sessions::cli_ids(&roots)))
+                            .collect();
+                        let owned = usage::ownership(&targets);
+                        let mut totals = std::collections::HashMap::new();
+                        let mut listed: Vec<PathBuf> = Vec::new();
+                        for (id, _) in &targets {
+                            let ranges: Vec<(PathBuf, i64, i64)> = owned
+                                .get(id)
+                                .into_iter()
+                                .flatten()
+                                .flat_map(|(cli, start, end)| {
+                                    usage::transcript_files(&claude, std::slice::from_ref(cli))
+                                        .into_iter()
+                                        .map(move |p| (p, *start, *end))
+                                })
+                                .collect();
+                            let files: Vec<PathBuf> = ranges.iter().map(|r| r.0.clone()).collect();
+                            tracker.scan(&files);
+                            totals.insert(id.clone(), tracker.totals_in(&ranges, now));
+                            listed.extend(files);
+                        }
+                        tracker.prune(now, &listed);
+                        tracker.save();
+                        if f.record_usage(totals) {
+                            commands::refresh(&h);
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(60));
                     }
                 });
             }

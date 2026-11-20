@@ -5,6 +5,8 @@ to our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ways to help
 
+The app links here from **Settings → About & contributing**.
+
 - **Report a bug** with the [bug template](https://github.com/Coding-Folks/claude-switcher/issues/new/choose).
   Add the relevant lines of `%LOCALAPPDATA%\ClaudeSwitcher\logs\app.log`.
 - **Translate the UI.** The panel's strings are in [`ui/strings.js`](ui/strings.js) (copy the `en`

@@ -37,6 +37,7 @@ pub struct Settings {
     update_checks: &'static str,
     /// "none" (no account of this Windows user) | "ours" | "other": who opens claude: links.
     link_handler: &'static str,
+    version: &'static str,
 }
 
 #[derive(Clone, Serialize)]
@@ -196,6 +197,7 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
         lang: crate::i18n::current(),
         update_checks: crate::update::checks_setting(&app),
         link_handler: link_handler(&f),
+        version: env!("CARGO_PKG_VERSION"),
     })
 }
 
@@ -324,4 +326,72 @@ pub async fn continue_session(
         f.continue_in(&session_id, &from, &to)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn mark_limited(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    until: Option<i64>,
+) -> AppResult<()> {
+    let f = state.flows()?;
+    blocking(&app, &state.busy, move || f.mark_limited(&id, until)).await
+}
+
+#[tauri::command]
+pub async fn clear_limit(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let f = state.flows()?;
+    blocking(&app, &state.busy, move || f.clear_limit(&id)).await
+}
+
+const REPO: &str = "https://github.com/Coding-Folks/claude-switcher";
+
+/// The only addresses the panel may open (it names one; it never passes a URL).
+pub fn url_for(which: &str) -> Option<&'static str> {
+    Some(match which {
+        "repo" => REPO,
+        "bug" => {
+            "https://github.com/Coding-Folks/claude-switcher/issues/new?template=bug_report.yml"
+        }
+        "contribute" => "https://github.com/Coding-Folks/claude-switcher/blob/main/CONTRIBUTING.md",
+        "license" => "https://github.com/Coding-Folks/claude-switcher/blob/main/LICENSE",
+        _ => return None,
+    })
+}
+
+#[tauri::command]
+pub fn open_url(which: String) -> AppResult<()> {
+    let url = url_for(&which).ok_or_else(|| AppError::new(ErrorCode::Invalid, "err.generic"))?;
+    std::process::Command::new("explorer.exe")
+        .arg(url)
+        .spawn()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_update_now(app: AppHandle) -> AppResult<Option<crate::update::UpdateInfo>> {
+    let found = crate::update::check_now(&app).await;
+    refresh(&app);
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_url_only_opens_known_links() {
+        assert_eq!(
+            url_for("repo"),
+            Some("https://github.com/Coding-Folks/claude-switcher")
+        );
+        assert_eq!(
+            url_for("bug"),
+            Some("https://github.com/Coding-Folks/claude-switcher/issues/new?template=bug_report.yml")
+        );
+        assert!(url_for("contribute").unwrap().ends_with("/CONTRIBUTING.md"));
+        assert!(url_for("license").unwrap().ends_with("/LICENSE"));
+        assert_eq!(url_for("https://evil.example"), None);
+    }
 }

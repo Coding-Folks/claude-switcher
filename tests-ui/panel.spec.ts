@@ -8,6 +8,13 @@ async function ready(page: Page, query = '') {
   await page.goto(PANEL + query);
   await expect(page.locator('.account')).toHaveCount(5);
 }
+async function openSettingsEn(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+}
+async function openSettings(page: Page) {
+  await page.getByRole('button', { name: 'Pengaturan', exact: true }).click();
+  await expect(page.locator('#view-settings')).toBeVisible();
+}
 const row = (page: Page, label: string) => page.locator('.account', { has: page.locator('.name', { hasText: label }) });
 
 for (const scheme of ['light', 'dark'] as const) {
@@ -53,20 +60,17 @@ test('keyboard: arrow moves between rows, Enter opens', async ({ page }) => {
 
 test('Tab past the last control wraps to the first, Shift+Tab wraps back (focus never leaves the panel)', async ({ page }) => {
   await ready(page);
-  await page.locator('#autostart').focus();
+  await page.locator('#add-open').focus(); // the last control of the list view
   await page.keyboard.press('Tab');
-  await expect(page.locator('#updates')).toBeFocused(); // the update-checks toggle
-  await page.keyboard.press('Tab');
-  await expect(page.locator('#lang')).toBeFocused(); // the language picker is the last control
-  await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Tampilkan Utama' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Pengaturan', exact: true })).toBeFocused(); // the first: the gear
   await page.keyboard.press('Shift+Tab');
-  await expect(page.locator('#lang')).toBeFocused();
+  await expect(page.locator('#add-open')).toBeFocused();
 });
 
 test('the keyboard shortcut that opens the panel is stated in it', async ({ page }) => {
   await ready(page);
-  await expect(page.locator('.foot')).toContainText('Buka panel: Ctrl+Alt+K');
+  await openSettings(page);
+  await expect(page.locator('#view-settings')).toContainText('Buka panel: Ctrl+Alt+K');
 });
 
 test('escape closes menu then returns focus to its button', async ({ page }) => {
@@ -345,23 +349,28 @@ test('English: axe AA and every string is translated', async ({ page }) => {
 test('switching language redraws the panel, renames a default Main and keeps focus on the picker', async ({ page }) => {
   await ready(page);
   await expect(row(page, 'Utama')).toBeVisible();
+  await openSettings(page);
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.focus();
   await picker.press('Enter');
   await page.getByRole('option', { name: 'English' }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('combobox', { name: 'Language' })).toBeFocused();
+  await page.keyboard.press('Escape'); // back to the list
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Claude accounts');
   await expect(row(page, 'Main')).toBeVisible();
   await expect(page.locator('#count')).toHaveText('2 running');
+  await openSettingsEn(page);
   await page.getByRole('combobox', { name: 'Language' }).click();
   await page.getByRole('option', { name: 'Bahasa Indonesia' }).click();
+  await page.keyboard.press('Escape');
   await expect(row(page, 'Utama')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Akun Claude');
 });
 
 test('language names are marked with their own language', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   await expect(page.locator('#lang-list [role="option"][data-value="en"]')).toHaveAttribute('lang', 'en');
   await expect(page.locator('#lang-list [role="option"][data-value="id"]')).toHaveAttribute('lang', 'id');
 });
@@ -412,9 +421,11 @@ for (const scheme of ['light', 'dark'] as const) {
 
 test('footer says the app is by Coding Folks, in both languages', async ({ page }) => {
   await ready(page);
-  await expect(page.locator('.foot')).toContainText('oleh Coding Folks');
+  await openSettings(page);
+  await expect(page.locator('#view-settings')).toContainText('oleh Coding Folks');
   await ready(page, '&lang=en');
-  await expect(page.locator('.foot')).toContainText('by Coding Folks');
+  await openSettingsEn(page);
+  await expect(page.locator('#view-settings')).toContainText('by Coding Folks');
 });
 
 test('a 40-character account name does not widen the panel', async ({ page }) => {
@@ -486,6 +497,7 @@ test('text inputs are 44 px with a focus ring', async ({ page }) => {
 
 test('autostart is a pill toggle', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   const t = page.locator('#autostart');
   const box = (await t.boundingBox())!;
   expect([box.width, box.height]).toEqual([40, 24]);
@@ -509,6 +521,7 @@ test('the RAM track differs from the panel ground in light mode', async ({ page 
 
 test('language picker opens with Enter, arrows move, Esc closes and keeps the language', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.focus();
   await page.keyboard.press('Enter');
@@ -526,6 +539,7 @@ test('language picker opens with Enter, arrows move, Esc closes and keeps the la
 
 test('typing a letter jumps to that language, Enter chooses it', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.focus();
   await page.keyboard.press('ArrowDown');
@@ -539,6 +553,7 @@ test('typing a letter jumps to that language, Enter chooses it', async ({ page }
 
 test('the chosen language is the selected option', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   await page.getByRole('combobox', { name: 'Bahasa' }).click();
   await expect(page.getByRole('option', { name: 'Bahasa Indonesia' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('option', { name: 'English' })).toHaveAttribute('aria-selected', 'false');
@@ -548,6 +563,7 @@ test('axe AA with the language list open', async ({ page }) => {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await ready(page);
+    await openSettings(page);
     await page.getByRole('combobox', { name: 'Bahasa' }).click();
     expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
   }
@@ -555,6 +571,7 @@ test('axe AA with the language list open', async ({ page }) => {
 
 test('the language list stays inside the window and closes on an outside click', async ({ page }) => {
   await ready(page);
+  await openSettings(page);
   const picker = page.getByRole('combobox', { name: 'Bahasa' });
   await picker.scrollIntoViewIfNeeded();
   await picker.click();
@@ -701,6 +718,7 @@ test('asks once whether to check for new versions; Ya turns the toggle on', asyn
   expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
   await ask.getByRole('button', { name: 'Ya, beri tahu' }).click();
   await expect(ask).toBeHidden();
+  await openSettings(page);
   await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeChecked();
 });
 
@@ -708,11 +726,13 @@ test('Tidak hides the question and leaves the toggle off', async ({ page }) => {
   await ready(page, '&updates=unasked');
   await page.locator('#updates-ask').getByRole('button', { name: 'Tidak' }).click();
   await expect(page.locator('#updates-ask')).toBeHidden();
+  await openSettings(page);
   await expect(page.getByRole('switch', { name: 'Cek versi baru' })).not.toBeChecked();
 });
 
 test('no question and no toggle when this build has no update key', async ({ page }) => {
   await ready(page, '&updates=unavailable');
+  await openSettings(page);
   await expect(page.locator('#updates-ask')).toBeHidden();
   await expect(page.getByRole('switch', { name: 'Cek versi baru' })).toBeHidden();
 });
@@ -720,7 +740,9 @@ test('no question and no toggle when this build has no update key', async ({ pag
 test('turning the checks off hides an offered update', async ({ page }) => {
   await ready(page, '&update=1');
   await expect(page.locator('#update')).toBeVisible();
+  await openSettings(page);
   await page.getByRole('switch', { name: 'Cek versi baru' }).click();
+  await page.keyboard.press('Escape');
   await expect(page.locator('#update')).toBeHidden();
 });
 
@@ -825,4 +847,132 @@ test('the dialog says the running source closes too, and the OK button carries t
   const note = page.locator('#continue-note');
   await expect(note).toContainText('Utama juga ditutup');
   await expect(page.locator('#continue-ok')).toHaveAttribute('aria-describedby', 'continue-note');
+});
+
+// ---- Usage and limits per account ----
+
+test('each Main and slot row shows its 5-hour usage', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Utama').locator('.usage')).toContainText('5 jam: 1,3 jt token');
+  await expect(row(page, 'Kantor').locator('.usage')).toHaveCount(0);
+});
+
+test('percent of the learned limit when it is known', async ({ page }) => {
+  await ready(page);
+  await expect(row(page, 'Slot B').locator('.usage')).toContainText('± 30% dari batas');
+});
+
+test('a limited account shows when it recovers', async ({ page }) => {
+  await ready(page, '&limited=1');
+  const r = row(page, 'Utama');
+  await expect(r.locator('.usage')).toContainText('Limit · pulih');
+  await expect(r).toHaveClass(/is-limited/);
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('mark and clear a limit from the menu', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Tandai kena limit…' }).click();
+  const input = page.locator('#confirm-input');
+  await expect(input).toHaveValue(/^\d{2}:\d{2}$/);
+  await page.locator('#confirm-ok').click();
+  await expect(row(page, 'Slot B').locator('.usage')).toContainText('Limit · pulih');
+  await row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' }).click();
+  await page.getByRole('menuitem', { name: 'Hapus tanda limit' }).click();
+  await expect(row(page, 'Slot B').locator('.usage')).not.toContainText('Limit · pulih');
+});
+
+test('the usage line is explained to screen readers', async ({ page }) => {
+  await ready(page);
+  const btn = row(page, 'Utama').locator('[data-role="primary"]');
+  await expect(btn).toHaveAttribute('aria-describedby', /usage-help/);
+  await expect(page.locator('#usage-help')).toContainText('Chat tidak terhitung');
+});
+
+// ---- Settings view, check / update now, sign-in link, contributing ----
+
+test('the gear opens Settings, Esc and the back button return to the list', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('button', { name: 'Pengaturan', exact: true }).click();
+  await expect(page.locator('#view-settings')).toBeVisible();
+  await expect(page.locator('#view-main')).toBeHidden();
+  await expect(page.locator('#settings-back')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-main')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pengaturan', exact: true })).toBeFocused();
+  await expect(page.locator('html')).not.toHaveAttribute('data-hidden', 'true'); // Esc did not close the panel
+  await openSettings(page);
+  await page.locator('#settings-back').click();
+  await expect(page.locator('#view-main')).toBeVisible();
+});
+
+test('the list view keeps only the accounts; settings live in Settings', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#autostart')).toBeHidden();
+  await expect(page.getByRole('combobox', { name: 'Bahasa' })).toBeHidden();
+  await openSettings(page);
+  for (const name of ['Jalan saat Windows mulai', 'Cek versi baru']) await expect(page.getByRole('switch', { name })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Bahasa' })).toBeVisible();
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  }
+});
+
+test('Cek sekarang says when this is the newest version', async ({ page }) => {
+  await ready(page, '&updates=on');
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Cek sekarang' }).click();
+  await expect(page.locator('#update-status')).toHaveText('Sudah versi terbaru.');
+});
+
+test('Cek sekarang finds a new version and offers Perbarui sekarang', async ({ page }) => {
+  await ready(page, '&updates=on&newer=1');
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Cek sekarang' }).click();
+  await expect(page.locator('#update-status')).toContainText('Versi 0.3.0 tersedia');
+  await page.getByRole('button', { name: 'Perbarui sekarang' }).click();
+  await expect(page.locator('#update-status')).toContainText('Mengunduh pembaruan…');
+});
+
+test('the sign-in link section shows its state and opens Windows settings', async ({ page }) => {
+  await ready(page, '&link=other');
+  await openSettings(page);
+  const sec = page.locator('#settings-link');
+  await expect(sec).toContainText('Claude masih membuka link login');
+  await sec.getByRole('button', { name: 'Atur di Windows' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__MOCK__.calls.open_link_settings ?? 0)).toBe(1);
+});
+
+test('contributing links open through the app', async ({ page }) => {
+  await ready(page);
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Laporkan masalah' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__MOCK__.lastUrl)).toBe('bug');
+  await page.getByRole('button', { name: 'Cara berkontribusi' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__MOCK__.lastUrl)).toBe('contribute');
+  await expect(page.locator('#view-settings')).toContainText('Coding Folks');
+});
+
+test('Esc in Settings returns to the list with the add form still open and focus in the panel', async ({ page }) => {
+  await ready(page);
+  await page.locator('#add-open').click();
+  await page.locator('#add-label').fill('Draft');
+  await openSettings(page);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-main')).toBeVisible();
+  await expect(page.locator('#add-label')).toHaveValue('Draft');
+  expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+});
+
+test('the 30-second countdown refresh leaves an open menu alone', async ({ page }) => {
+  await page.clock.install();
+  await ready(page, '&limited=1');
+  const kebab = row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' });
+  await kebab.click();
+  await page.clock.runFor(31_000);
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' })).toBeFocused();
 });
