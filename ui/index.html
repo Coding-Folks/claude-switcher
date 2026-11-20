@@ -101,9 +101,9 @@
       <div class="lang">
         <span id="lang-label" data-s="language"></span>
         <div class="picker">
-          <button type="button" id="lang" role="combobox" aria-labelledby="lang-label" aria-haspopup="listbox"
+          <button type="button" id="lang" class="picker-btn" role="combobox" aria-labelledby="lang-label" aria-haspopup="listbox"
                   aria-expanded="false" aria-controls="lang-list"><span id="lang-value"></span><svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <ul id="lang-list" role="listbox" aria-labelledby="lang-label" hidden></ul>
+          <ul id="lang-list" class="picker-list" role="listbox" aria-labelledby="lang-label" hidden></ul>
         </div>
       </div>
       <p class="hint" data-s="shortcut_hint"></p>
@@ -115,6 +115,29 @@
   </main>
 
   <div class="menu" id="menu" role="menu" hidden></div>
+
+  <dialog id="continue" aria-labelledby="continue-title">
+    <form method="dialog">
+      <h2 id="continue-title" data-s="continue_title"></h2>
+      <fieldset class="sessions">
+        <legend id="continue-from"></legend>
+        <div class="session-list" id="continue-list"></div>
+      </fieldset>
+      <div class="lang">
+        <span id="continue-to-label" data-s="continue_to"></span>
+        <div class="picker">
+          <button type="button" id="continue-to" class="picker-btn" role="combobox" aria-labelledby="continue-to-label" aria-haspopup="listbox"
+                  aria-expanded="false" aria-controls="continue-to-list"><span id="continue-to-value"></span><svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <ul id="continue-to-list" class="picker-list" role="listbox" aria-labelledby="continue-to-label" hidden></ul>
+        </div>
+      </div>
+      <p class="hint" id="continue-note"></p>
+      <div class="row-actions">
+        <button value="cancel" class="secondary" data-s="cancel"></button>
+        <button value="ok" class="primary" id="continue-ok" data-s="continue_ok" aria-describedby="continue-note"></button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">
     <form method="dialog">

@@ -12,6 +12,7 @@ pub mod monitor;
 pub mod naming;
 pub mod platform;
 pub mod proc;
+pub mod sessions;
 pub mod share;
 pub mod slot;
 pub mod store;
@@ -129,6 +130,8 @@ pub fn run() {
             commands::set_update_checks,
             commands::fit_panel,
             commands::open_link_settings,
+            commands::list_sessions,
+            commands::continue_session,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

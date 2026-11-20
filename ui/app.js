@@ -171,7 +171,9 @@
     clearError();
     const label = a.account.label;
     try {
-      if (action === "close") {
+      if (action === "continue") {
+        await continueSession(a);
+      } else if (action === "close") {
         await invoke("close_account", { id: a.account.id });
         announce(t("closed", { label }));
       } else if (action === "rename") {
@@ -216,6 +218,9 @@
     const items = [];
     if (a.state === "Running") items.push(["close", t("menu_close")]);
     items.push(["rename", t("menu_rename")], ["repair", t("menu_repair")]);
+    // Continue a session elsewhere: Main and this user's slots, when another of them exists.
+    const canContinue = (x) => x.account.kind === "main" || x.account.kind === "same_user";
+    if (canContinue(a) && accounts.some((x) => x.account.id !== a.account.id && canContinue(x))) items.push(["continue", t("menu_continue")]);
     if (a.account.kind !== "main") items.push(["import", t("menu_import")], ["remove", t("menu_remove")]);
     menu.replaceChildren(...items.map(([action, text]) => {
       const b = document.createElement("button");
@@ -409,6 +414,62 @@
   $("updates-no").addEventListener("click", () => setUpdateChecks(false, true));
   $("updates").addEventListener("change", (e) => setUpdateChecks(e.target.checked, false));
 
+  // ---------- continue a session in another account ----------
+  function ago(ms) {
+    const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (min < 1) return t("ago_now");
+    if (min < 60) return t("ago_min", { n: min });
+    if (min < 60 * 24) return t("ago_hour", { n: Math.round(min / 60) });
+    return t("ago_day", { n: Math.round(min / 1440) });
+  }
+  const continueTo = makePicker($("continue-to"), $("continue-to-list"), $("continue-to-value"), (id) => {
+    continueTo.select(id); continueNote();
+  });
+  let continueFrom = null;
+  function continueNote() {
+    const target = byId(continueTo.value), source = byId(continueFrom);
+    if (!target) return;
+    let note = t(target.state === "Running" ? "continue_note_running" : "continue_note", { label: target.account.label });
+    if (source && source.state === "Running") note += " " + t("continue_note_source", { label: source.account.label });
+    $("continue-note").textContent = note;
+  }
+  async function continueSession(menuAccount) {
+    // A status refresh rebuilds `accounts`: work with the current entries, compared by id.
+    const a = byId(menuAccount.account.id) || menuAccount;
+    continueFrom = a.account.id;
+    const sessions = await invoke("list_sessions", { id: a.account.id });
+    if (!sessions.length) return showError({ message_id: "continue_none" }, { label: a.account.label });
+    const targets = accounts.filter((x) => x.account.id !== a.account.id && (x.account.kind === "main" || x.account.kind === "same_user"));
+    $("continue-from").textContent = t("continue_from", { label: a.account.label });
+    $("continue-list").replaceChildren(...sessions.map((s, i) => {
+      const label = document.createElement("label");
+      label.className = "session";
+      label.innerHTML = '<input type="radio" name="session"><span class="s-text"><span class="s-title"></span><span class="s-meta"></span></span>';
+      const input = label.querySelector("input");
+      input.value = s.id; input.checked = i === 0;
+      label.querySelector(".s-title").textContent = s.title || t("untitled");
+      label.querySelector(".s-meta").textContent = [s.folder, ago(s.last_activity)].filter(Boolean).join(" · ");
+      return label;
+    }));
+    continueTo.set(targets.map((x) => ({ value: x.account.id, label: x.account.label })), targets[0].account.id);
+    continueNote();
+    const dlg = $("continue");
+    const opener = document.activeElement;
+    const answer = await new Promise((resolve) => {
+      dlg.addEventListener("close", () => resolve(dlg.returnValue), { once: true });
+      dlg.returnValue = "";
+      dlg.showModal();
+      dlg.querySelector('input[name="session"]:checked').focus();
+    });
+    if (opener && opener.isConnected) opener.focus();
+    if (answer !== "ok") return;
+    const sessionId = dlg.querySelector('input[name="session"]:checked').value;
+    const to = byId(continueTo.value);
+    const title = await invoke("continue_session", { sessionId, from: a.account.id, to: to.account.id });
+    announce(t("continued", { title: title || t("untitled"), label: to.account.label }));
+    await refresh();
+  }
+
   // ---------- claude: links ----------
   // Claude Desktop claims claude: links for itself; the user has to pick Claude Switcher once.
   let linkLater = false;
@@ -435,84 +496,100 @@
   // ---------- language ----------
   // The picker is the landing page's Select (a popover listbox), built as the ARIA "select-only
   // combobox": focus stays on the button, aria-activedescendant names the highlighted option.
-  const picker = $("lang"), list = $("lang-list");
+  // Used for the language and for the account a session continues in.
   const CHECK = '<svg class="check" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m3.5 8.5 3 3 6-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  for (const [code, name] of window.LANGS) {
-    const li = document.createElement("li");
-    li.id = "lang-opt-" + code; li.setAttribute("role", "option"); li.dataset.value = code; li.lang = code;
-    li.innerHTML = CHECK; li.prepend(name);
-    li.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus on the button
-    li.addEventListener("click", () => chooseLang(code));
-    li.addEventListener("pointermove", () => highlight(options().indexOf(li)));
-    list.append(li);
+  function makePicker(button, list, valueEl, onChoose) {
+    let items = [], selected = null, active = -1;
+    const options = () => [...list.children];
+    function highlight(i) {
+      const opts = options();
+      if (!opts.length) return;
+      active = Math.max(0, Math.min(opts.length - 1, i));
+      opts.forEach((o, k) => o.classList.toggle("is-active", k === active));
+      button.setAttribute("aria-activedescendant", opts[active].id);
+    }
+    function open() {
+      if (!list.hidden || !items.length) return;
+      list.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      highlight(items.findIndex((it) => it.value === selected));
+      // Open upward when there is no room below (the picker sits at the bottom of the panel).
+      list.classList.remove("up");
+      const r = button.getBoundingClientRect();
+      if (r.bottom + 6 + list.offsetHeight > window.innerHeight - 8) list.classList.add("up");
+    }
+    function close() {
+      if (list.hidden) return;
+      list.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      button.removeAttribute("aria-activedescendant");
+    }
+    function choose(value) {
+      close();
+      button.focus();
+      if (value === selected) return;
+      onChoose(value);
+    }
+    function render() {
+      list.replaceChildren(...items.map((it) => {
+        const li = document.createElement("li");
+        li.id = (list.id === "lang-list" ? "lang-opt" : list.id) + "-" + it.value; li.setAttribute("role", "option"); li.dataset.value = it.value;
+        if (it.lang) li.lang = it.lang;
+        li.setAttribute("aria-selected", String(it.value === selected));
+        li.innerHTML = CHECK; li.prepend(it.label);
+        li.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus on the button
+        li.addEventListener("click", () => choose(it.value));
+        li.addEventListener("pointermove", () => highlight(options().indexOf(li)));
+        return li;
+      }));
+      const cur = items.find((it) => it.value === selected);
+      valueEl.textContent = cur ? cur.label : "";
+      if (cur && cur.lang) valueEl.lang = cur.lang;
+    }
+    button.addEventListener("click", () => (list.hidden ? open() : close()));
+    button.addEventListener("keydown", (e) => {
+      const isOpen = !list.hidden, n = options().length;
+      if (!isOpen && ["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); open(); return; }
+      if (!isOpen) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); highlight(active + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); highlight(active - 1); }
+      else if (e.key === "Home") { e.preventDefault(); highlight(0); }
+      else if (e.key === "End") { e.preventDefault(); highlight(n - 1); }
+      else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(options()[active].dataset.value); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === "Tab") { close(); }
+      else if (e.key.length === 1 && /\S/.test(e.key)) {
+        // Type a letter: the next option whose name starts with it.
+        const opts = options(), k = e.key.toLowerCase();
+        for (let step = 1; step <= n; step++) {
+          const i = (active + step) % n;
+          if (opts[i].textContent.trim().toLowerCase().startsWith(k)) { highlight(i); break; }
+        }
+      }
+    });
+    document.addEventListener("pointerdown", (e) => { if (!list.parentElement.contains(e.target)) close(); });
+    button.addEventListener("blur", () => close());
+    return {
+      set(newItems, value) { items = newItems; selected = value; render(); },
+      get value() { return selected; },
+      select(value) { selected = value; render(); },
+    };
   }
-  const options = () => [...list.children];
-  let active = -1;
-  function highlight(i) {
-    const opts = options();
-    active = Math.max(0, Math.min(opts.length - 1, i));
-    opts.forEach((o, k) => o.classList.toggle("is-active", k === active));
-    picker.setAttribute("aria-activedescendant", opts[active].id);
-  }
-  function openList() {
-    if (!list.hidden) return;
-    list.hidden = false;
-    picker.setAttribute("aria-expanded", "true");
-    highlight(options().findIndex((o) => o.dataset.value === window.LANG));
-    // Open upward when there is no room below (the picker sits at the bottom of the panel).
-    list.classList.remove("up");
-    const r = picker.getBoundingClientRect();
-    if (r.bottom + 6 + list.offsetHeight > window.innerHeight - 8) list.classList.add("up");
-  }
-  function closeList() {
-    if (list.hidden) return;
-    list.hidden = true;
-    picker.setAttribute("aria-expanded", "false");
-    picker.removeAttribute("aria-activedescendant");
-  }
-  async function chooseLang(code) {
-    closeList();
-    picker.focus();
-    if (code === window.LANG) return;
+
+  const langPicker = makePicker($("lang"), $("lang-list"), $("lang-value"), async (code) => {
     const prev = window.LANG;
     applyLang(code);
     render();
     try { await invoke("set_language", { lang: window.LANG }); }
     catch (err) { applyLang(prev); render(); showError(err); }
-  }
-  picker.addEventListener("click", () => (list.hidden ? openList() : closeList()));
-  picker.addEventListener("keydown", (e) => {
-    const open = !list.hidden, n = options().length;
-    if (!open && ["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); openList(); return; }
-    if (!open) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); highlight(active + 1); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); highlight(active - 1); }
-    else if (e.key === "Home") { e.preventDefault(); highlight(0); }
-    else if (e.key === "End") { e.preventDefault(); highlight(n - 1); }
-    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chooseLang(options()[active].dataset.value); }
-    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeList(); }
-    else if (e.key === "Tab") { closeList(); }
-    else if (e.key.length === 1 && /\S/.test(e.key)) {
-      // Type a letter: the next language whose name starts with it.
-      const opts = options(), k = e.key.toLowerCase();
-      for (let step = 1; step <= n; step++) {
-        const i = (active + step) % n;
-        if (opts[i].textContent.trim().toLowerCase().startsWith(k)) { highlight(i); break; }
-      }
-    }
   });
-  document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".picker")) closeList(); });
-  picker.addEventListener("blur", () => closeList());
 
   function applyLang(lang) {
     setLang(lang);
     document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
     document.querySelectorAll("[data-ph]").forEach((el) => { el.placeholder = t(el.dataset.ph); });
     if (typeof renderUpdate === "function") renderUpdate();
-    const name = (window.LANGS.find(([c]) => c === window.LANG) || [, window.LANG])[1];
-    $("lang-value").textContent = name;
-    $("lang-value").lang = window.LANG;
-    options().forEach((o) => o.setAttribute("aria-selected", String(o.dataset.value === window.LANG)));
+    langPicker.set(window.LANGS.map(([code, name]) => ({ value: code, label: name, lang: code })), window.LANG);
   }
 
   // ---------- boot ----------

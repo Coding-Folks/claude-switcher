@@ -5,6 +5,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Continue a session in another account.** When one account hits its usage limit, **⋯ → Continue a
+  session in another account…** copies one of its recent Claude Code sessions to another account of
+  this Windows user and opens that account with it; the conversation carries on with its full
+  context. The session stays in the first account too, and a newer copy in the other account is never
+  overwritten. Main and "This Windows user" accounts for now.
+
 ### Fixed
 
 - After Claude Desktop updated itself, accounts' taskbar icons stopped being made until Claude

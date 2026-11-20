@@ -609,6 +609,73 @@ impl<P: Platform> Flows<P> {
 
     /// Copies this Claude account's Code session list from the main user's data into the hidden user's.
     /// Claude must not be running as that user while its files are written, so it is closed first.
+    /// Main's or a same-user slot's `claude-code-sessions` folders; hidden users cannot take part.
+    fn session_roots(&self, a: &Account) -> AppResult<Vec<PathBuf>> {
+        match a.kind {
+            AccountKind::Main => Ok(self.p.session_dirs(None)),
+            AccountKind::SameUser => Ok(self.p.session_dirs(Some(Self::data_root(a)?))),
+            AccountKind::WindowsUser => Err(invalid(
+                "a separate Windows user's sessions are out of reach",
+            )),
+        }
+    }
+
+    /// The account's recent Claude Code sessions (newest first, at most 8).
+    pub fn sessions_of(&self, id: &str) -> AppResult<Vec<crate::sessions::SessionSummary>> {
+        let a = self.find(id)?;
+        Ok(crate::sessions::list(&self.session_roots(&a)?, 8))
+    }
+
+    /// Copies session `session_id` of account `from` to account `to` and opens `to` with it
+    /// (closing it first if it runs, so Claude does not overwrite its session list). Returns the title.
+    pub fn continue_in(&self, session_id: &str, from: &str, to: &str) -> AppResult<String> {
+        if from == to {
+            return Err(invalid("the same account"));
+        }
+        let src = self.find(from)?;
+        let dst = self.find(to)?;
+        let src_roots = self.session_roots(&src)?;
+        let dst_roots = self.session_roots(&dst)?;
+        let session = crate::sessions::list(&src_roots, usize::MAX)
+            .into_iter()
+            .find(|s| s.id == session_id)
+            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.not_found"))?;
+        // Check everything that can fail before closing anything: a never signed-in destination,
+        // an unreadable source, a newer copy already in the destination.
+        let dir = crate::sessions::target_dir(&dst_roots)
+            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.continue_no_signin"))?;
+        let now = || chrono::Utc::now().timestamp_millis();
+        let existing = session
+            .path
+            .file_name()
+            .and_then(|n| std::fs::read_to_string(dir.join(n)).ok());
+        if let crate::sessions::CopyPlan::DestinationNewer = crate::sessions::plan_copy(
+            &std::fs::read_to_string(&session.path)?,
+            existing.as_deref(),
+            now(),
+        )? {
+            return Err(AppError::new(ErrorCode::Invalid, "err.continue_newer"));
+        }
+        // The source closes too, so the same conversation is never written from two accounts.
+        self.close_and_wait(&src)?;
+        let snap = self.p.snapshot();
+        let dst_was_running = self.running_root(&dst, &snap).is_some();
+        self.close_and_wait(&dst)?;
+        if let Err(e) = crate::sessions::copy(&session.path, &dir, now()) {
+            if dst_was_running {
+                let _ = self.open(to, true); // leave it as it was
+            }
+            return Err(e);
+        }
+        crate::applog::info(
+            "continue session",
+            &[("from", from), ("to", to), ("session", session_id)],
+        );
+        self.opening.lock().unwrap().remove(to);
+        self.open(to, true)?;
+        Ok(session.title)
+    }
+
     pub fn import_history(&self, id: &str) -> AppResult<()> {
         let a = self.find(id)?;
         if a.kind == AccountKind::Main {
@@ -713,6 +780,7 @@ mod tests {
         slot_no_data: Mutex<HashSet<String>>,
         stuck: Mutex<bool>,
         move_labels: Mutex<HashMap<String, String>>,
+        session_roots: Mutex<HashMap<String, Vec<PathBuf>>>,
     }
     impl Fake {
         fn new() -> Self {
@@ -895,6 +963,15 @@ mod tests {
                     .unwrap_or_else(|| "already_moved_package_emptied".into()),
             )
         }
+        fn session_dirs(&self, data_root: Option<&Path>) -> Vec<PathBuf> {
+            let key = data_root.map_or("main".to_string(), |r| r.display().to_string());
+            self.session_roots
+                .lock()
+                .unwrap()
+                .get(&key)
+                .cloned()
+                .unwrap_or_default()
+        }
         fn slot_import(&self, r: &Path) -> AppResult<usize> {
             self.check("slot_import")?;
             self.log(format!("slot_import {}", r.display()));
@@ -1001,6 +1078,171 @@ mod tests {
             list.iter().find(|x| x.id == a).unwrap().color.as_deref(),
             Some("#2F6FDE")
         );
+    }
+
+    /// A `claude-code-sessions` root for an account ("main" or a slot root), with one signed-in
+    /// `<account>\<org>` folder; returns that folder.
+    fn sessions_root(f: &Flows<Fake>, key: &str) -> PathBuf {
+        let root = std::env::temp_dir()
+            .join(format!("cs-flow-sessions-{}", uuid::Uuid::new_v4()))
+            .join("claude-code-sessions");
+        let org = root.join("acc").join("org");
+        std::fs::create_dir_all(&org).unwrap();
+        f.p.session_roots
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), vec![root]);
+        org
+    }
+    fn put_session(org: &Path, id: &str, title: &str) {
+        std::fs::write(
+            org.join(format!("{id}.json")),
+            serde_json::json!({"sessionId": id, "title": title, "cwd": "C:\\x", "lastActivityAt": 5, "lastFocusedAt": 5, "isArchived": false}).to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn continue_in_copies_the_session_and_opens_the_destination() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        let to = sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        let title = f.continue_in("local_a", &main_id(&f), &b).unwrap();
+        assert_eq!(title, "Wedding");
+        assert!(to.join("local_a.json").exists());
+        assert!(
+            f.p.calls()
+                .iter()
+                .any(|c| c == &format!("launch_slot {root}")),
+            "{:?}",
+            f.p.calls()
+        );
+    }
+
+    #[test]
+    fn continue_in_closes_a_running_destination_first() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 7, 1));
+        f.continue_in("local_a", &main_id(&f), &b).unwrap();
+        let calls = f.p.calls();
+        let close = calls
+            .iter()
+            .position(|c| c.starts_with("close 7"))
+            .expect("closed");
+        let launch = calls
+            .iter()
+            .position(|c| c.starts_with("launch_slot"))
+            .expect("opened");
+        assert!(close < launch, "{calls:?}");
+    }
+
+    #[test]
+    fn windows_user_accounts_cannot_take_part() {
+        let (f, _d) = flows();
+        let w = add_existing(&f, "Kantor", "claude-kantor");
+        let e = f.continue_in("local_a", &main_id(&f), &w).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn no_signed_in_destination_is_not_found() {
+        let (f, _d) = flows();
+        let (b, _root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        put_session(&from, "local_a", "Wedding");
+        let e = f.continue_in("local_a", &main_id(&f), &b).unwrap_err();
+        assert_eq!(
+            (e.code, e.message_id),
+            (ErrorCode::NotFound, "err.continue_no_signin")
+        );
+        assert!(
+            !f.p.calls().iter().any(|c| c.starts_with("close")),
+            "nothing closed"
+        );
+    }
+
+    #[test]
+    fn unknown_session_is_not_found() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        sessions_root(&f, "main");
+        sessions_root(&f, &root);
+        let e = f.continue_in("local_zzz", &main_id(&f), &b).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn a_destination_that_will_not_close_is_left_alone() {
+        let (f, _d) = flows();
+        f.set_close_wait(Duration::from_millis(200));
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        let to = sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        f.p.running.lock().unwrap().push(slot_instance(&root, 7, 1));
+        *f.p.stuck.lock().unwrap() = true;
+        let e = f.continue_in("local_a", &main_id(&f), &b).unwrap_err();
+        assert_eq!(e.message_id, "err.still_running");
+        assert!(!to.join("local_a.json").exists());
+    }
+
+    #[test]
+    fn a_running_source_is_closed_too_so_one_session_is_never_open_twice() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        f.p.running.lock().unwrap().push(InstanceStatus {
+            owner_sid: "SID-main".into(),
+            root_pid: 3,
+            bytes: GB,
+            data_dir: None,
+        });
+        f.continue_in("local_a", &main_id(&f), &b).unwrap();
+        assert!(
+            f.p.calls().iter().any(|c| c.starts_with("close 3")),
+            "{:?}",
+            f.p.calls()
+        );
+    }
+
+    #[test]
+    fn a_newer_copy_in_the_destination_is_found_before_anything_is_closed() {
+        let (f, _d) = flows();
+        let (b, root) = add_slot(&f, "B");
+        let from = sessions_root(&f, "main");
+        let to = sessions_root(&f, &root);
+        put_session(&from, "local_a", "Wedding");
+        std::fs::write(
+            to.join("local_a.json"),
+            serde_json::json!({"sessionId": "local_a", "lastActivityAt": 99}).to_string(),
+        )
+        .unwrap();
+        f.p.running.lock().unwrap().push(slot_instance(&root, 7, 1));
+        let e = f.continue_in("local_a", &main_id(&f), &b).unwrap_err();
+        assert_eq!(e.message_id, "err.continue_newer");
+        assert!(
+            !f.p.calls().iter().any(|c| c.starts_with("close")),
+            "{:?}",
+            f.p.calls()
+        );
+    }
+
+    #[test]
+    fn sessions_of_lists_the_account_s_recent_sessions() {
+        let (f, _d) = flows();
+        let from = sessions_root(&f, "main");
+        put_session(&from, "local_a", "Wedding");
+        let got = f.sessions_of(&main_id(&f)).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].title, "Wedding");
     }
 
     #[test]
