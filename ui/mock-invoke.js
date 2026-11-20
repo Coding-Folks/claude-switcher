@@ -34,6 +34,8 @@
     free_ram: params.get("ram") === "low" ? Math.round(1.5 * GB) : Math.round(9.2 * GB),
     // ?updates=unasked|on|off|unavailable (default: on with ?update, else off)
     update_checks: params.get("updates") || (params.has("update") ? "on" : "off"),
+    // ?link=other|ours: who opens claude: links (default: none, no same-user account matters)
+    link_handler: params.get("link") || "none",
     recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
@@ -64,6 +66,7 @@
       if (params.get("update") === "fail") throw { code: "Io", message_id: "err.update_failed", detail: "signature" };
     },
     async open_update_notes() {},
+    async open_link_settings() {},
     async set_update_checks({ enabled }) { settings.update_checks = enabled ? "on" : "off"; },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {
@@ -105,7 +108,9 @@
   };
 
   window.__MOCK__ = {
+    calls: {}, // how often each command ran (tests)
     invoke: async (cmd, args) => {
+      window.__MOCK__.calls[cmd] = (window.__MOCK__.calls[cmd] || 0) + 1;
       if (!handlers[cmd]) throw { code: "Io", message_id: "err.generic", detail: "unknown command " + cmd };
       return handlers[cmd](args || {});
     },

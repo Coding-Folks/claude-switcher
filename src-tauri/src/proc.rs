@@ -48,6 +48,7 @@ mod tests {
             ("share.rs", include_str!("share.rs")),
             ("slot.rs", include_str!("slot.rs")),
             ("update.rs", include_str!("update.rs")),
+            ("commands.rs", include_str!("commands.rs")),
             ("monitor.rs", include_str!("monitor.rs")),
             ("flows.rs", include_str!("flows.rs")),
             ("winuser.rs", include_str!("winuser.rs")),

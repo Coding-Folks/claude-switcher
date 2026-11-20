@@ -5,7 +5,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-20
+
 ### Fixed
+
+- Google sign-in in a new account still finished in Main with current Claude Desktop: Claude now
+  claims `claude:` links in its package manifest, and Windows prefers that over the handler Claude
+  Switcher set up. Claude Switcher now registers as an app that can open CLAUDE links, and while
+  Windows still gives them to Claude the panel says so and opens **Settings → Default apps** for
+  Claude Switcher: choose it for **CLAUDE** once and sign-ins land in the account that started them.
 
 - A console window flashed up when Claude Switcher started (and when it closed or repaired an
   account): the PowerShell, icacls and taskkill calls now run without a window.
@@ -72,6 +80,7 @@ First public release.
 - Light, dark and high-contrast themes; WCAG 2.2 AA, tested with axe and Narrator.
 - Coding Folks brand mark and app icons.
 
-[Unreleased]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Coding-Folks/claude-switcher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Coding-Folks/claude-switcher/releases/tag/v0.1.0

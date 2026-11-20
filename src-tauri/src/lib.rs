@@ -128,6 +128,7 @@ pub fn run() {
             commands::open_update_notes,
             commands::set_update_checks,
             commands::fit_panel,
+            commands::open_link_settings,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

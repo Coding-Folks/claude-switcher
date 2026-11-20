@@ -35,6 +35,8 @@ pub struct Settings {
     lang: crate::i18n::Lang,
     /// "unavailable" | "unasked" | "on" | "off"
     update_checks: &'static str,
+    /// "none" (no account of this Windows user) | "ours" | "other": who opens claude: links.
+    link_handler: &'static str,
 }
 
 #[derive(Clone, Serialize)]
@@ -193,6 +195,7 @@ pub async fn get_settings(app: AppHandle, state: State<'_, AppState>) -> AppResu
         recovered_backup,
         lang: crate::i18n::current(),
         update_checks: crate::update::checks_setting(&app),
+        link_handler: link_handler(&f),
     })
 }
 
@@ -265,4 +268,34 @@ pub fn set_update_checks(app: AppHandle, enabled: bool) -> AppResult<()> {
 #[tauri::command]
 pub fn fit_panel(app: AppHandle, height: f64) {
     crate::tray::fit_panel(&app, height);
+}
+
+/// Who opens claude: links, when it matters (there is an account of this Windows user).
+fn link_handler(f: &AppFlows) -> &'static str {
+    let slots = f
+        .accounts()
+        .map(|l| {
+            l.iter()
+                .any(|a| a.kind == crate::store::AccountKind::SameUser)
+        })
+        .unwrap_or(false);
+    if !slots {
+        return "none";
+    }
+    match (
+        crate::deeplink::effective_command(),
+        std::env::current_exe(),
+    ) {
+        (Some(cmd), Ok(exe)) if crate::deeplink::handler_is_ours(&cmd, &exe) => "ours",
+        _ => "other",
+    }
+}
+
+/// Opens Windows' Default apps page for Claude Switcher, where the user picks it for CLAUDE links.
+#[tauri::command]
+pub fn open_link_settings() -> AppResult<()> {
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:defaultapps?registeredAppUser=Claude%20Switcher")
+        .spawn()?;
+    Ok(())
 }

@@ -29,6 +29,7 @@
     renderAccounts();
     $("autostart").checked = !!settings.autostart;
     renderUpdateChecks(settings.update_checks);
+    renderLinkAsk(settings.link_handler);
     fitWindow();
   }
 
@@ -407,6 +408,16 @@
   $("updates-yes").addEventListener("click", () => setUpdateChecks(true, true));
   $("updates-no").addEventListener("click", () => setUpdateChecks(false, true));
   $("updates").addEventListener("change", (e) => setUpdateChecks(e.target.checked, false));
+
+  // ---------- claude: links ----------
+  // Claude Desktop claims claude: links for itself; the user has to pick Claude Switcher once.
+  let linkLater = false;
+  function renderLinkAsk(mode) { $("link-ask").hidden = linkLater || mode !== "other"; }
+  $("link-fix").addEventListener("click", () => invoke("open_link_settings").catch(showError));
+  $("link-later").addEventListener("click", () => {
+    linkLater = true; renderLinkAsk(settings.link_handler);
+    $("add-open").focus(); // the card is gone; keep focus in the panel
+  });
 
   // ---------- search ----------
   $("search").addEventListener("input", () => renderAccounts());

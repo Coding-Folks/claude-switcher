@@ -49,6 +49,13 @@ itself as the `claude://` handler (`HKCU\Software\Classes\claude`) and passes ea
 whose Claude log shows the most recent sign-in sent to the browser (within 15 minutes), or to Main.
 The link is never written to the log.
 
+Current Claude Desktop also claims `claude:` links in its MSIX package manifest, and Windows prefers
+that over `Software\Classes\claude`. So Claude Switcher also registers as an app for CLAUDE links
+(ProgID `ClaudeSwitcher.claude`, `Software\CodingFolks\ClaudeSwitcher\Capabilities`,
+`RegisteredApplications`). Apps may not set the default themselves, so while Windows still gives the
+links to Claude, the panel shows a card that opens **Settings → Default apps** for Claude Switcher,
+where you choose it for **CLAUDE** once.
+
 To tell the instances apart (they all run as you), the app reads the `--user-data-dir=` that Claude's
 child processes carry on their command line.
 

@@ -87,6 +87,10 @@ window.STRINGS_BY_LANG = {
     updates_yes: "Ya, beri tahu",
     updates_no: "Tidak",
     updates_toggle: "Cek versi baru",
+    link_ask: "Login Google masuk ke akun Utama?",
+    link_ask_hint: "Windows membuka link login Claude dengan Claude sendiri, jadi akun baru tidak menerimanya. Di pengaturan yang terbuka, pilih Claude Switcher untuk “CLAUDE”. Cukup sekali.",
+    link_fix: "Buka pengaturan Windows",
+    link_later: "Nanti",
 
     "err.uac_cancelled": "Dibatalkan. Tidak ada yang berubah.",
     "err.update_failed": "Pembaruan gagal. Coba lagi nanti; versi ini tetap jalan.",
@@ -189,6 +193,10 @@ window.STRINGS_BY_LANG = {
     updates_yes: "Yes, tell me",
     updates_no: "No",
     updates_toggle: "Check for new versions",
+    link_ask: "Google sign-in landing in Main?",
+    link_ask_hint: "Windows opens Claude sign-in links with Claude itself, so a new account never gets them. In the settings that open, choose Claude Switcher for “CLAUDE”. Once is enough.",
+    link_fix: "Open Windows settings",
+    link_later: "Later",
 
     "err.uac_cancelled": "Cancelled. Nothing changed.",
     "err.update_failed": "The update failed. Try again later; this version keeps running.",

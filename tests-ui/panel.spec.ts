@@ -723,3 +723,28 @@ test('turning the checks off hides an offered update', async ({ page }) => {
   await page.getByRole('switch', { name: 'Cek versi baru' }).click();
   await expect(page.locator('#update')).toBeHidden();
 });
+
+// ---- claude: links: ask the user to pick Claude Switcher once in Windows' Default apps ----
+
+test('when Windows opens claude links with Claude itself, the panel says how to fix it', async ({ page }) => {
+  await ready(page, '&link=other');
+  const card = page.locator('#link-ask');
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('Login Google masuk ke akun Utama?');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+  await card.getByRole('button', { name: 'Buka pengaturan Windows' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__MOCK__.calls.open_link_settings ?? 0)).toBe(1);
+});
+
+test('Nanti hides the link card until the panel opens again', async ({ page }) => {
+  await ready(page, '&link=other');
+  await page.locator('#link-ask').getByRole('button', { name: 'Nanti' }).click();
+  await expect(page.locator('#link-ask')).toBeHidden();
+});
+
+test('no link card when Claude Switcher already opens claude links, or there is no account of this user', async ({ page }) => {
+  await ready(page, '&link=ours');
+  await expect(page.locator('#link-ask')).toBeHidden();
+  await ready(page);
+  await expect(page.locator('#link-ask')).toBeHidden();
+});
