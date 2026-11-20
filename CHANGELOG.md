@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-20
+
 ### Added
 
 - **Usage per account, to pick one that is still safe.** Each Main and "This Windows user" row shows
@@ -112,7 +114,8 @@ First public release.
 - Light, dark and high-contrast themes; WCAG 2.2 AA, tested with axe and Narrator.
 - Coding Folks brand mark and app icons.
 
-[Unreleased]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Coding-Folks/claude-switcher/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Coding-Folks/claude-switcher/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Coding-Folks/claude-switcher/compare/v0.1.0...v0.2.0
