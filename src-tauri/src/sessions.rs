@@ -350,4 +350,15 @@ mod tests {
         let e = copy(&src, &dest, 43).unwrap_err();
         assert_eq!(e.message_id, "err.continue_newer");
     }
+
+    #[test]
+    #[ignore] // live: copies one real session (CS_LIVE_SRC) into a real account (CS_LIVE_TO_ROOT)
+    fn live_continue_one_session() {
+        let src = PathBuf::from(std::env::var("CS_LIVE_SRC").unwrap());
+        let to_root = PathBuf::from(std::env::var("CS_LIVE_TO_ROOT").unwrap());
+        let dir = target_dir(&[to_root]).expect("destination signed in");
+        println!("target folder: {}", dir.display());
+        copy(&src, &dir, chrono::Utc::now().timestamp_millis()).unwrap();
+        println!("written: {}", dir.join(src.file_name().unwrap()).display());
+    }
 }
