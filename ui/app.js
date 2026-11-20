@@ -424,7 +424,7 @@
 
   // Size the native window to the content (Tauri only; max 480px, spec §5).
   function fitWindow() {
-    if (!tauri || !tauri.window) return;
+    if (tauri && !tauri.window) return;
     // Grow with the content up to the screen's work area (spec said 480px; too short once the add form opens).
     const max = Math.max(480, (window.screen.availHeight || 480) - 32);
     const h = Math.min(max, Math.ceil(document.querySelector(".panel").scrollHeight));
@@ -432,6 +432,10 @@
     // top-left corner, so a shorter panel drifted up, away from the tray).
     invoke("fit_panel", { height: h }).catch(() => {});
   }
+
+  // Any change in the content's height (a card hidden, a row added, a form opened) re-fits the
+  // window, so it never keeps the height of something that is gone.
+  new ResizeObserver(() => fitWindow()).observe(document.querySelector(".panel"));
 
   // ---------- update ----------
   // A newer release on GitHub: say so, and install it only when the user presses Perbarui.

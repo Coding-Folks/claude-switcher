@@ -15,6 +15,31 @@ pub fn console(program: impl AsRef<OsStr>) -> Command {
     cmd
 }
 
+/// Opens a link (https:, ms-settings:) the way the Start menu would, through the shell. Not through
+/// `explorer.exe <link>`: explorer reads a link with "?a=b" as a folder and opens Documents.
+pub fn open_link(link: &str) -> std::io::Result<()> {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    // SAFETY: plain strings, no window handle; ShellExecuteW does not keep them.
+    let r = unsafe {
+        ShellExecuteW(
+            None,
+            &HSTRING::from("open"),
+            &HSTRING::from(link),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // Values above 32 mean success.
+    if r.0 as isize > 32 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!("ShellExecute failed ({})", r.0 as isize)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -28,6 +53,23 @@ mod tests {
             .unwrap();
         assert!(out.status.success());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hidden");
+    }
+
+    /// Links (https:, ms-settings:) open through the shell: given to explorer.exe as an argument, a
+    /// link with "?a=b" opens the Documents folder instead (seen on Windows 11 26300).
+    #[test]
+    fn links_are_opened_by_the_shell_not_by_explorer_arguments() {
+        let sources = [
+            ("commands.rs", include_str!("commands.rs")),
+            ("update.rs", include_str!("update.rs")),
+            ("tray.rs", include_str!("tray.rs")),
+        ];
+        let bad: Vec<String> = sources
+            .iter()
+            .filter(|(_, src)| src.contains(concat!("Command::new(", "\"explorer.exe\")")))
+            .map(|(name, _)| name.to_string())
+            .collect();
+        assert!(bad.is_empty(), "use proc::open_link: {bad:?}");
     }
 
     /// Every program this app starts outside tests goes through `console` (or is a GUI app).
