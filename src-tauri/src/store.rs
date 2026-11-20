@@ -32,6 +32,9 @@ pub struct Account {
     /// "Kena limit" set by hand: until when (ms since 1970).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit_mark_until: Option<i64>,
+    /// When the last automatic limit learned from was hit (ms), so a restart does not learn it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_learned_at: Option<i64>,
 }
 
 impl Account {
@@ -46,6 +49,7 @@ impl Account {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         }
     }
 }
@@ -144,6 +148,7 @@ mod tests {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         }
     }
 

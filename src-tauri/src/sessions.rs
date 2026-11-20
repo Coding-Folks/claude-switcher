@@ -85,13 +85,23 @@ pub fn list(roots: &[PathBuf], max: usize) -> Vec<SessionSummary> {
     out
 }
 
-/// Marks a session copied here by "Lanjutkan sesi": when (ms).
+/// Marks a session copied here by "Lanjutkan sesi": each time it arrived here (ms). A first entry
+/// of 0 means this account had it from the start, before it was continued back here.
 pub const CONTINUED_AT: &str = "switcherContinuedAt";
+
+/// The arrival times in a session file (a single number in files from 0.3 previews, a list now).
+fn arrivals(v: &Value) -> Vec<i64> {
+    match v.get(CONTINUED_AT) {
+        Some(Value::Array(a)) => a.iter().filter_map(millis).collect(),
+        Some(x) => millis(x).into_iter().collect(),
+        None => Vec::new(),
+    }
+}
 
 /// Every Claude Code transcript id the account's sessions point at (archived ones too, and the
 /// earlier ids of a session that was compacted or restarted): their usage is this account's.
-pub fn cli_ids(roots: &[PathBuf]) -> Vec<(String, Option<i64>)> {
-    let mut out: Vec<(String, Option<i64>)> = Vec::new();
+pub fn cli_ids(roots: &[PathBuf]) -> Vec<(String, Vec<i64>)> {
+    let mut out: Vec<(String, Vec<i64>)> = Vec::new();
     for d in org_dirs(roots) {
         for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -105,16 +115,16 @@ pub fn cli_ids(roots: &[PathBuf]) -> Vec<(String, Option<i64>)> {
                 continue;
             };
             // Set when Claude Switcher continued this session here: its use belongs here from then on.
-            let since = v.get(CONTINUED_AT).and_then(millis);
+            let since = arrivals(&v);
             if let Some(id) = v.get("cliSessionId").and_then(Value::as_str) {
-                out.push((id.to_string(), since));
+                out.push((id.to_string(), since.clone()));
             }
             if let Some(prior) = v.get("priorCliSessionIds").and_then(Value::as_array) {
                 out.extend(
                     prior
                         .iter()
                         .filter_map(Value::as_str)
-                        .map(|p| (p.to_string(), since)),
+                        .map(|p| (p.to_string(), since.clone())),
                 );
             }
         }
@@ -162,11 +172,20 @@ pub fn plan_copy(src_json: &str, dest_existing: Option<&str>, now_ms: i64) -> Ap
     let mut v: Value = serde_json::from_str(src_json)
         .map_err(|e| AppError::new(ErrorCode::Invalid, "err.generic").with_detail(e.to_string()))?;
     let activity = |v: &Value| v.get("lastActivityAt").and_then(millis).unwrap_or(0);
-    if let Some(dest) = dest_existing.and_then(|d| serde_json::from_str::<Value>(d).ok()) {
-        if activity(&dest) > activity(&v) {
+    let dest = dest_existing.and_then(|d| serde_json::from_str::<Value>(d).ok());
+    if let Some(dest) = &dest {
+        if activity(dest) > activity(&v) {
             return Ok(CopyPlan::DestinationNewer);
         }
     }
+    // The destination keeps its earlier stretches (0 = it had the session from the start); the
+    // source's own arrival times stay with the source.
+    let mut stamps = match &dest {
+        Some(d) if arrivals(d).is_empty() => vec![0],
+        Some(d) => arrivals(d),
+        None => Vec::new(),
+    };
+    stamps.push(now_ms);
     let obj = v
         .as_object_mut()
         .ok_or_else(|| AppError::new(ErrorCode::Invalid, "err.generic"))?;
@@ -177,7 +196,7 @@ pub fn plan_copy(src_json: &str, dest_existing: Option<&str>, now_ms: i64) -> Ap
     };
     obj.insert("lastFocusedAt".into(), focused);
     obj.insert("isArchived".into(), Value::Bool(false));
-    obj.insert(CONTINUED_AT.into(), Value::from(now_ms));
+    obj.insert(CONTINUED_AT.into(), Value::from(stamps));
     Ok(CopyPlan::Write(
         serde_json::to_string(&v).expect("a JSON value serializes"),
     ))
@@ -341,15 +360,20 @@ mod tests {
             &org.join("local_d.json"),
             r#"{"cliSessionId":"c3","switcherContinuedAt":42}"#,
         );
+        write(
+            &org.join("local_e.json"),
+            r#"{"cliSessionId":"c4","switcherContinuedAt":[0,77]}"#,
+        );
         let mut ids = cli_ids(&[root]);
         ids.sort();
         assert_eq!(
             ids,
             [
-                ("c0".to_string(), None),
-                ("c1".to_string(), None),
-                ("c2".to_string(), None),
-                ("c3".to_string(), Some(42))
+                ("c0".to_string(), vec![]),
+                ("c1".to_string(), vec![]),
+                ("c2".to_string(), vec![]),
+                ("c3".to_string(), vec![42]),
+                ("c4".to_string(), vec![0, 77])
             ]
         );
     }
@@ -366,7 +390,26 @@ mod tests {
         assert_eq!(v["title"], "Wedding");
         assert_eq!(v["cliSessionId"], "cli-1");
         assert_eq!(v["model"], "claude-opus-5-5");
-        assert_eq!(v["switcherContinuedAt"], 9_999); // from now on its use belongs to this account
+        assert_eq!(v["switcherContinuedAt"], serde_json::json!([9_999])); // its use belongs here from now on
+    }
+
+    #[test]
+    fn continuing_back_keeps_the_earlier_stretch_of_the_destination() {
+        // The destination had the session from the start (no stamp) and gets it back now.
+        let src = session("local_a", "t", "C:\\", "\"300\"", false);
+        let dest = session("local_a", "t", "C:\\", "\"200\"", false);
+        let CopyPlan::Write(out) = plan_copy(&src, Some(&dest), 9_000).unwrap() else {
+            panic!()
+        };
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["switcherContinuedAt"], serde_json::json!([0, 9_000]));
+        // and a source's own move times never travel with the copy
+        let src = serde_json::json!({"sessionId": "local_a", "lastActivityAt": 300, "switcherContinuedAt": [5_000]}).to_string();
+        let CopyPlan::Write(out) = plan_copy(&src, None, 9_000).unwrap() else {
+            panic!()
+        };
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["switcherContinuedAt"], serde_json::json!([9_000]));
     }
 
     #[test]

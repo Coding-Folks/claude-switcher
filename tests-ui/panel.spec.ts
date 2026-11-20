@@ -954,3 +954,25 @@ test('contributing links open through the app', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (window as any).__MOCK__.lastUrl)).toBe('contribute');
   await expect(page.locator('#view-settings')).toContainText('Coding Folks');
 });
+
+test('Esc in Settings returns to the list with the add form still open and focus in the panel', async ({ page }) => {
+  await ready(page);
+  await page.locator('#add-open').click();
+  await page.locator('#add-label').fill('Draft');
+  await openSettings(page);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-main')).toBeVisible();
+  await expect(page.locator('#add-label')).toHaveValue('Draft');
+  expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+});
+
+test('the 30-second countdown refresh leaves an open menu alone', async ({ page }) => {
+  await page.clock.install();
+  await ready(page, '&limited=1');
+  const kebab = row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' });
+  await kebab.click();
+  await page.clock.runFor(31_000);
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(row(page, 'Slot B').getByRole('button', { name: 'Opsi untuk Slot B' })).toBeFocused();
+});

@@ -104,7 +104,12 @@
     const min = Math.max(0, Math.ceil((ms - Date.now()) / 60000));
     return t("left", { h: Math.floor(min / 60), m: min % 60 });
   }
-  setInterval(() => { if (accounts.some((x) => x.usage && x.usage.limited_until)) render(); }, 30000);
+  // Keep the countdowns current; not while a menu or dialog is open (re-rendering the rows would
+  // take away the element they return focus to).
+  setInterval(() => {
+    if (menuFor || $("confirm").open) return;
+    if (accounts.some((x) => x.usage && x.usage.limited_until)) render();
+  }, 30000);
 
   function renderAccounts() {
     const list = $("accounts");
@@ -407,8 +412,8 @@
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
     if ($("confirm").open) return;                // the dialog handles its own Escape
+    if (!$("view-settings").hidden) { showSettings(false); return; } // the add form waits behind it
     if (!$("add-form").hidden) { setAddOpen(false); return; }
-    if (!$("view-settings").hidden) { showSettings(false); return; }
     invoke("hide_panel").catch(() => {});
   });
 

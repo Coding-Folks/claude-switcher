@@ -85,8 +85,6 @@ pub struct Flows<P: Platform> {
     pub recovered_backup: Mutex<Option<std::path::PathBuf>>,
     /// Latest usage per account id (from the usage loop).
     usage: Mutex<HashMap<String, crate::usage::Totals>>,
-    /// The automatic limit already learned from, per account (its `limited_until`).
-    learned_hits: Mutex<HashMap<String, i64>>,
 }
 
 fn invalid(why: &str) -> AppError {
@@ -104,7 +102,6 @@ impl<P: Platform> Flows<P> {
             close_wait: Mutex::new(Duration::from_secs(10)),
             recovered_backup: Mutex::new(None),
             usage: Mutex::new(HashMap::new()),
-            learned_hits: Mutex::new(HashMap::new()),
         }
     }
 
@@ -419,6 +416,7 @@ impl<P: Platform> Flows<P> {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -466,6 +464,7 @@ impl<P: Platform> Flows<P> {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -675,14 +674,21 @@ impl<P: Platform> Flows<P> {
         })
     }
 
-    /// Adds a learned-limit sample to an account (keeps the last three).
-    fn learn_limit(&self, id: &str, tokens: u64) -> AppResult<()> {
+    /// Adds a learned-limit sample to an account (keeps the last three). `hit_at`: the automatic
+    /// hit it comes from, learned once even across restarts.
+    fn learn_limit(&self, id: &str, tokens: u64, hit_at: Option<i64>) -> AppResult<()> {
         if tokens == 0 {
             return Ok(());
         }
         let _w = self.write.lock().unwrap();
         let mut list = self.accounts()?;
         if let Some(a) = list.iter_mut().find(|a| a.id == id) {
+            if hit_at.is_some() {
+                if a.limit_learned_at == hit_at {
+                    return Ok(());
+                }
+                a.limit_learned_at = hit_at;
+            }
             a.limit_samples.push(tokens);
             let extra = a.limit_samples.len().saturating_sub(LIMIT_SAMPLES);
             a.limit_samples.drain(..extra);
@@ -691,22 +697,14 @@ impl<P: Platform> Flows<P> {
         Ok(())
     }
 
-    /// New usage from the loop. Learns from each automatic limit once. True when anything changed.
+    /// New usage from the loop. Learns from each automatic five-hour limit once, with the use at
+    /// the moment it was hit (a weekly limit says nothing about the five-hour one). True when
+    /// anything changed.
     pub fn record_usage(&self, totals: HashMap<String, crate::usage::Totals>) -> bool {
-        let mut learn = Vec::new();
-        {
-            let mut hits = self.learned_hits.lock().unwrap();
-            for (id, t) in &totals {
-                if let Some(until) = t.limited_until {
-                    if hits.get(id) != Some(&until) {
-                        hits.insert(id.clone(), until);
-                        learn.push((id.clone(), t.five_h));
-                    }
-                }
+        for (id, t) in &totals {
+            if let (Some(at), false) = (t.limit_hit_at, t.weekly) {
+                let _ = self.learn_limit(id, t.five_h_at_hit, Some(at));
             }
-        }
-        for (id, tokens) in learn {
-            let _ = self.learn_limit(&id, tokens);
         }
         let mut cur = self.usage.lock().unwrap();
         let changed = *cur != totals;
@@ -714,12 +712,21 @@ impl<P: Platform> Flows<P> {
         changed
     }
 
-    /// "Kena limit" by hand, until `until_ms` (default: five hours from now); learns the limit.
+    /// "Kena limit" by hand, until `until_ms` (default: five hours from now); learns the limit,
+    /// unless an automatic limit is already in force (that one was learned from its own hit).
     pub fn mark_limited(&self, id: &str, until_ms: Option<i64>) -> AppResult<()> {
         let now = chrono::Utc::now().timestamp_millis();
         let until = until_ms.unwrap_or(now + crate::usage::WINDOW);
-        let five_h = self.usage.lock().unwrap().get(id).map_or(0, |t| t.five_h);
-        self.learn_limit(id, five_h)?;
+        let t = self
+            .usage
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or_default();
+        if t.limited_until.map_or(true, |u| u <= now) {
+            self.learn_limit(id, t.five_h, None)?;
+        }
         let _w = self.write.lock().unwrap();
         let mut list = self.accounts()?;
         let a = list
@@ -1128,6 +1135,7 @@ mod tests {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         };
         list.push(a.clone());
         f.store.save(&list).unwrap();
@@ -1162,6 +1170,7 @@ mod tests {
             color: None,
             limit_samples: Vec::new(),
             limit_mark_until: None,
+            limit_learned_at: None,
         });
         f.store.save(&list).unwrap();
         (id, root.display().to_string())
@@ -1376,6 +1385,9 @@ mod tests {
             five_h,
             seven_d: five_h,
             limited_until,
+            limit_hit_at: limited_until.map(|_| 1_000),
+            five_h_at_hit: five_h,
+            weekly: false,
         }
     }
     fn view(f: &Flows<Fake>, id: &str) -> AccountView {
@@ -1430,6 +1442,45 @@ mod tests {
         f.record_usage(HashMap::from([(b.clone(), totals(600, Some(FAR)))]));
         let u = view(&f, &b).usage.unwrap();
         assert_eq!((u.limit_source, u.limit_tokens), (Some("auto"), Some(500)));
+    }
+
+    #[test]
+    fn a_hit_is_learned_once_even_after_a_restart() {
+        let (f, d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        f.record_usage(HashMap::from([(b.clone(), totals(500, Some(FAR)))]));
+        // Claude Switcher restarts: a new Flows over the same accounts.json sees the same hit again
+        let again = Flows::new(Fake::new(), Store::new(&d));
+        again.record_usage(HashMap::from([(b.clone(), totals(300, Some(FAR)))]));
+        assert_eq!(view(&again, &b).usage.unwrap().limit_tokens, Some(500));
+    }
+
+    #[test]
+    fn a_weekly_limit_is_not_learned_as_a_five_hour_limit() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        let mut t = totals(400, Some(FAR));
+        t.weekly = true;
+        f.record_usage(HashMap::from([(b.clone(), t)]));
+        let u = view(&f, &b).usage.unwrap();
+        assert_eq!((u.limited_until, u.limit_tokens), (Some(FAR), None));
+    }
+
+    #[test]
+    fn a_manual_mark_during_an_automatic_limit_learns_nothing_more() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        f.record_usage(HashMap::from([(b.clone(), totals(500, Some(FAR)))]));
+        f.mark_limited(&b, Some(FAR)).unwrap();
+        assert_eq!(
+            f.accounts()
+                .unwrap()
+                .into_iter()
+                .find(|a| a.id == b)
+                .unwrap()
+                .limit_samples,
+            vec![500]
+        );
     }
 
     #[test]

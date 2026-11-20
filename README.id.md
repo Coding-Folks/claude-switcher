@@ -73,7 +73,7 @@ dan memory tetap dipakai bersama.
 | Melanjutkan sesi setelah kena limit | **⋯ → Lanjutkan sesi di akun lain…**, pilih sesi dan akunnya |
 | Mengatasi masalah | Tombol **Perbaiki** muncul di baris yang bermasalah |
 | Menghapus akun | **⋯ → Hapus** (login dan datanya ikut terhapus; akun Utama aman) |
-| Mengganti bahasa | **Bahasa** di bagian bawah panel |
+| Mengganti bahasa | **Bahasa** di **Pengaturan** (roda gigi di atas panel) |
 
 ## Cara kerja singkat
 
@@ -94,7 +94,7 @@ Penjelasan lengkap: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
   membaca atau menulis file di folder pertukarannya sendiri.
 - Tidak ada telemetri. Satu-satunya permintaan jaringan adalah cek pembaruan, dan hanya bila Anda
   setuju: panel bertanya sekali (**Beri tahu saya bila ada versi baru?**) dan **Cek versi baru** di
-  bagian bawah menyalakan atau mematikannya. Setelah itu aplikasi meminta `latest.json` rilis terbaru ke
+  **Pengaturan** menyalakan atau mematikannya. Setelah itu aplikasi meminta `latest.json` rilis terbaru ke
   github.com saat mulai dan tiap 6 jam (unduhannya sendiri dari `objects.githubusercontent.com` milik GitHub). Tidak ada data tentang
   Anda atau akun Anda di dalamnya, hanya yang terlihat dari setiap permintaan HTTPS (alamat IP Anda serta
   nama dan versi aplikasi). Pembaruan hanya dipasang saat Anda menekan **Perbarui**, dan hanya bila tanda
@@ -105,7 +105,7 @@ Menemukan celah keamanan? Lihat [SECURITY.md](SECURITY.md). Cara rilis dibangun 
 
 ## Pembaruan
 
-Bila Anda mengizinkan pengecekan (ditanya sekali; toggle di bawah mengubahnya) dan ada rilis yang lebih
+Bila Anda mengizinkan pengecekan (ditanya sekali; toggle di **Pengaturan** mengubahnya, dan **Cek sekarang** mengecek saat itu juga) dan ada rilis yang lebih
 baru, panel menampilkan **Versi x.y.z tersedia** dengan **Perbarui**. Menekannya
 mengunduh installer, memeriksa tanda tangannya, meminta persetujuan admin sekali (UAC), lalu membuka
 aplikasi di versi baru. Tidak ada yang terpasang sendiri. **Lihat perubahan** membuka halaman rilis.

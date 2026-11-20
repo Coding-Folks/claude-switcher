@@ -221,6 +221,7 @@ pub fn run() {
                             .collect();
                         let owned = usage::ownership(&targets);
                         let mut totals = std::collections::HashMap::new();
+                        let mut listed: Vec<PathBuf> = Vec::new();
                         for (id, _) in &targets {
                             let ranges: Vec<(PathBuf, i64, i64)> = owned
                                 .get(id)
@@ -235,7 +236,9 @@ pub fn run() {
                             let files: Vec<PathBuf> = ranges.iter().map(|r| r.0.clone()).collect();
                             tracker.scan(&files);
                             totals.insert(id.clone(), tracker.totals_in(&ranges, now));
+                            listed.extend(files);
                         }
+                        tracker.prune(now, &listed);
                         tracker.save();
                         if f.record_usage(totals) {
                             commands::refresh(&h);
