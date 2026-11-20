@@ -12,6 +12,7 @@ pub mod monitor;
 pub mod naming;
 pub mod platform;
 pub mod proc;
+pub mod sessions;
 pub mod share;
 pub mod slot;
 pub mod store;
