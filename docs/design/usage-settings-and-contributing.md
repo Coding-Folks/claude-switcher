@@ -1,6 +1,6 @@
 # Pemakaian per akun, layar Pengaturan, update sekarang, kontribusi
 
-Status: desain, menunggu persetujuan · 2026-11-20
+Status: diimplementasikan · 2026-11-20
 
 ## Maksud
 

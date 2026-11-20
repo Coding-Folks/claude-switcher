@@ -19,7 +19,10 @@
       </svg>
       <h1 id="title" data-s="title"></h1>
       <p class="count num" id="count"></p>
+      <button type="button" class="icon-btn" id="settings-open" data-s-aria="settings"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M6.7 1.5h2.6l.4 1.9 1.4.8 1.8-.6 1.3 2.2-1.4 1.3v1.8l1.4 1.3-1.3 2.2-1.8-.6-1.4.8-.4 1.9H6.7l-.4-1.9-1.4-.8-1.8.6-1.3-2.2 1.4-1.3V7.1L1.8 5.8l1.3-2.2 1.8.6 1.4-.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/></svg></button>
     </header>
+
+    <div class="view" id="view-main">
 
     <section class="update ask" id="link-ask" aria-labelledby="link-ask-title" hidden>
       <div class="update-text">
@@ -90,14 +93,19 @@
       </form>
     </div>
 
-    <footer class="foot">
+
+    </div>
+
+    <section class="view settings" id="view-settings" aria-labelledby="settings-title" hidden>
+      <div class="settings-head">
+        <button type="button" class="icon-btn" id="settings-back" data-s-aria="back"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="settings-title" data-s="settings"></h2>
+      </div>
+      <section class="card" aria-labelledby="s-general">
+        <h3 id="s-general" data-s="settings_general"></h3>
       <label class="switch">
         <input type="checkbox" id="autostart" role="switch">
         <span data-s="autostart"></span>
-      </label>
-      <label class="switch" id="updates-switch" hidden>
-        <input type="checkbox" id="updates" role="switch">
-        <span data-s="updates_toggle"></span>
       </label>
       <div class="lang">
         <span id="lang-label" data-s="language"></span>
@@ -107,9 +115,38 @@
           <ul id="lang-list" class="picker-list" role="listbox" aria-labelledby="lang-label" hidden></ul>
         </div>
       </div>
-      <p class="hint" data-s="shortcut_hint"></p>
-      <p class="byline"><span data-s="byline_by"></span> <b lang="en">Coding Folks</b></p>
-    </footer>
+        <p class="hint" data-s="shortcut_hint"></p>
+      </section>
+      <section class="card" aria-labelledby="s-updates">
+        <h3 id="s-updates" data-s="settings_updates"></h3>
+      <label class="switch" id="updates-switch" hidden>
+        <input type="checkbox" id="updates" role="switch">
+        <span data-s="updates_toggle"></span>
+      </label>
+        <p class="hint" id="app-version"></p>
+        <div class="row-actions start">
+          <button type="button" class="secondary" id="update-check" data-s="update_check"></button>
+          <button type="button" class="primary" id="update-now" data-s="update_now" hidden></button>
+        </div>
+        <p class="hint" id="update-status" aria-live="polite"></p>
+      </section>
+      <section class="card" id="settings-link" aria-labelledby="s-link">
+        <h3 id="s-link" data-s="settings_link"></h3>
+        <p class="hint" id="link-state"></p>
+        <div class="row-actions start"><button type="button" class="secondary" id="link-fix-2" data-s="link_fix_short"></button></div>
+      </section>
+      <section class="card" aria-labelledby="s-about">
+        <h3 id="s-about" data-s="settings_about"></h3>
+        <p class="hint" id="about-text"></p>
+        <div class="links">
+          <button type="button" class="link" data-url="repo">GitHub</button>
+          <button type="button" class="link" data-url="bug" data-s="link_bug"></button>
+          <button type="button" class="link" data-url="contribute" data-s="link_contribute"></button>
+          <button type="button" class="link" data-url="license" data-s="link_license"></button>
+        </div>
+        <p class="byline"><span data-s="byline_by"></span> <b lang="en">Coding Folks</b></p>
+      </section>
+    </section>
 
     <div class="live visually-hidden" id="live" aria-live="polite"></div>
     <p class="alert" id="alert" role="alert"></p>

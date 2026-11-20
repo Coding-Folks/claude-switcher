@@ -110,6 +110,14 @@ baru, panel menampilkan **Versi x.y.z tersedia** dengan **Perbarui**. Menekannya
 mengunduh installer, memeriksa tanda tangannya, meminta persetujuan admin sekali (UAC), lalu membuka
 aplikasi di versi baru. Tidak ada yang terpasang sendiri. **Lihat perubahan** membuka halaman rilis.
 
+## Cara membantu
+
+Claude Switcher open source (MIT). **Pengaturan → Tentang & kontribusi** berisi tautannya:
+
+- **Laporkan masalah**: laporan bug dengan versi Windows dan Claude Desktop, serta apa yang terjadi.
+- **Bantu terjemahan**: teks panel ada di `ui/strings.js` (saat ini Inggris dan Bahasa Indonesia).
+- **Kirim perbaikan**: lihat [CONTRIBUTING.md](CONTRIBUTING.md) untuk persiapan, tes, dan pull request.
+
 ## Lisensi dan merek dagang
 
 [MIT](LICENSE) © 2026 Coding Folks.

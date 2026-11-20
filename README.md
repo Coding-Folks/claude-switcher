@@ -120,6 +120,14 @@ panel shows **Version x.y.z is available** with **Update**. Pressing it
 downloads the installer, checks its signature, asks for admin approval once (UAC) and reopens the app
 in the new version. Nothing installs on its own. **What's new** opens the release page.
 
+## How to help
+
+Claude Switcher is open source (MIT). **Settings → About & contributing** has the links:
+
+- **Report a problem**: a bug report with your Windows and Claude Desktop versions and what happened.
+- **Help translate**: the panel's text lives in `ui/strings.js` (English and Bahasa Indonesia today).
+- **Send a fix**: see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests and pull requests.
+
 ## Limitations
 
 - Windows only, and only the MSIX build of Claude Desktop.

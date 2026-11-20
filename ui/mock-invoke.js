@@ -44,6 +44,7 @@
     update_checks: params.get("updates") || (params.has("update") ? "on" : "off"),
     // ?link=other|ours: who opens claude: links (default: none, no same-user account matters)
     link_handler: params.get("link") || "none",
+    version: "0.2.2",
     recovered_backup: params.has("corrupt") ? "C:/Users/alice/AppData/Roaming/ClaudeSwitcher/accounts.json.bad-20261112-170000" : null,
   };
   const listeners = {};
@@ -75,6 +76,11 @@
     },
     async open_update_notes() {},
     async open_link_settings() {},
+    // ?newer=1: "Check now" finds 0.3.0
+    async check_update_now() {
+      return params.has("newer") || params.has("update") ? { version: "0.3.0", notes_url: "https://github.com/Coding-Folks/claude-switcher/releases/tag/v0.3.0" } : null;
+    },
+    async open_url({ which }) { window.__MOCK__.lastUrl = which; },
     async mark_limited({ id, until }) { const u = find(id).usage; u.limited_until = until; u.limit_source = "manual"; },
     async clear_limit({ id }) { const u = find(id).usage; u.limited_until = null; u.limit_source = null; },
     // ?sessions=0: no sessions; ?continue=newer: the destination has a newer copy.

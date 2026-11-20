@@ -30,6 +30,7 @@
     $("autostart").checked = !!settings.autostart;
     renderUpdateChecks(settings.update_checks);
     renderLinkAsk(settings.link_handler);
+    if (!$("view-settings").hidden) renderSettings();
     fitWindow();
   }
 
@@ -144,7 +145,7 @@
           if (a.usage.limit_tokens) text += " · " + t("usage_pct", { p: Math.round((a.usage.five_h / a.usage.limit_tokens) * 100) });
           usage.append(bar, document.createTextNode(text));
         }
-        li.querySelector(".who").append(usage);
+        li.append(usage); // a full-width line under the name and the buttons
       }
       li.querySelector(".state-text").textContent = stateText(a);
       // Which kind of account this is, read with the status through aria-describedby (Main has none).
@@ -407,6 +408,7 @@
     if (e.key !== "Escape" || e.defaultPrevented) return;
     if ($("confirm").open) return;                // the dialog handles its own Escape
     if (!$("add-form").hidden) { setAddOpen(false); return; }
+    if (!$("view-settings").hidden) { showSettings(false); return; }
     invoke("hide_panel").catch(() => {});
   });
 
@@ -437,17 +439,19 @@
       : t("update_available", { v: update.version });
     $("update-notes").hidden = updating;
     $("update-go").disabled = updating;
+    if (updating) $("update-status").textContent = $("update-msg").textContent;
   }
   async function refreshUpdate() {
     try { update = await invoke("get_update"); } catch { update = null; }
     renderUpdate();
   }
   listen("update-progress", (e) => { updatePct = e.payload.percent ?? updatePct; renderUpdate(); });
-  $("update-go").addEventListener("click", async () => {
+  async function startUpdate() {
     updating = true; updatePct = 0; renderUpdate();
     try { await invoke("install_update"); } // on success the app restarts into the new version
     catch (err) { updating = false; renderUpdate(); showError(err); }
-  });
+  }
+  $("update-go").addEventListener("click", startUpdate);
   $("update-notes").addEventListener("click", () => invoke("open_update_notes").catch(showError));
 
   // Checks only with consent: asked once (#updates-ask), then the footer toggle.
@@ -525,6 +529,41 @@
     announce(t("continued", { title: title || t("untitled"), label: to.account.label }));
     await refresh();
   }
+
+  // ---------- Settings ----------
+  function showSettings(open) {
+    $("view-main").hidden = open;
+    $("view-settings").hidden = !open;
+    if (open) { renderSettings(); $("settings-back").focus(); } else $("settings-open").focus();
+    fitWindow();
+  }
+  function renderSettings() {
+    const v = settings.version || "";
+    $("app-version").textContent = v ? t("app_version", { v }) : "";
+    $("about-text").textContent = t("about", { v });
+    const checks = settings.update_checks;
+    $("update-check").hidden = checks === "unavailable" || !checks;
+    if (checks === "unavailable") $("update-status").textContent = t("err.update_unavailable");
+    $("update-now").hidden = !update || updating;
+    const mode = settings.link_handler;
+    $("link-state").textContent = t(mode === "ours" ? "link_ours" : mode === "other" ? "link_other" : "link_none");
+    $("link-fix-2").hidden = mode !== "other";
+  }
+  $("settings-open").addEventListener("click", () => showSettings(true));
+  $("settings-back").addEventListener("click", () => showSettings(false));
+  $("update-check").addEventListener("click", async () => {
+    $("update-status").textContent = t("update_checking");
+    try {
+      if (settings.update_checks !== "on") await setUpdateChecks(true, false); // checking now means agreeing to checks
+      update = await invoke("check_update_now");
+      renderUpdate();
+      $("update-status").textContent = update ? t("update_available", { v: update.version }) : t("update_latest");
+    } catch (err) { $("update-status").textContent = ""; showError(err); }
+    renderSettings();
+  });
+  $("update-now").addEventListener("click", startUpdate);
+  $("link-fix-2").addEventListener("click", () => invoke("open_link_settings").catch(showError));
+  document.querySelectorAll("[data-url]").forEach((b) => b.addEventListener("click", () => invoke("open_url", { which: b.dataset.url }).catch(showError)));
 
   // ---------- claude: links ----------
   // Claude Desktop claims claude: links for itself; the user has to pick Claude Switcher once.
@@ -644,6 +683,8 @@
     setLang(lang);
     document.querySelectorAll("[data-s]").forEach((el) => { el.textContent = t(el.dataset.s); });
     document.querySelectorAll("[data-ph]").forEach((el) => { el.placeholder = t(el.dataset.ph); });
+    document.querySelectorAll("[data-s-aria]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.sAria)));
+    if (typeof renderSettings === "function") renderSettings();
     if (typeof renderUpdate === "function") renderUpdate();
     langPicker.set(window.LANGS.map(([code, name]) => ({ value: code, label: name, lang: code })), window.LANG);
   }

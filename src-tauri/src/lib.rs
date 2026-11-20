@@ -135,6 +135,8 @@ pub fn run() {
             commands::continue_session,
             commands::mark_limited,
             commands::clear_limit,
+            commands::open_url,
+            commands::check_update_now,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
