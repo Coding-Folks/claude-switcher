@@ -70,6 +70,7 @@ dan memory tetap dipakai bersama.
 | Membuka atau menampilkan akun | **Buka** / **Tampilkan** di baris akun |
 | Menutup satu akun | **⋯ → Tutup** |
 | Menyalin sesi Code ke akun itu | **⋯ → Impor riwayat** (login ke akun itu dulu) |
+| Melanjutkan sesi setelah kena limit | **⋯ → Lanjutkan sesi di akun lain…**, pilih sesi dan akunnya |
 | Mengatasi masalah | Tombol **Perbaiki** muncul di baris yang bermasalah |
 | Menghapus akun | **⋯ → Hapus** (login dan datanya ikut terhapus; akun Utama aman) |
 | Mengganti bahasa | **Bahasa** di bagian bawah panel |

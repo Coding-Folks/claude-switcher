@@ -748,3 +748,61 @@ test('no link card when Claude Switcher already opens claude links, or there is 
   await ready(page);
   await expect(page.locator('#link-ask')).toBeHidden();
 });
+
+// ---- Continue a session in another account ----
+
+async function openContinue(page: Page) {
+  await row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' }).click();
+  await page.getByRole('menuitem', { name: 'Lanjutkan sesi di akun lain…' }).click();
+}
+
+test('the menu offers to continue a session only on accounts that can take part', async ({ page }) => {
+  await ready(page);
+  await row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Lanjutkan sesi di akun lain…' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await row(page, 'Kantor').getByRole('button', { name: 'Opsi untuk Kantor' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Lanjutkan sesi di akun lain…' })).toHaveCount(0);
+});
+
+test('an account without sessions says so instead of an empty dialog', async ({ page }) => {
+  await ready(page, '&sessions=0');
+  await openContinue(page);
+  await expect(page.locator('#alert')).toContainText('Utama belum punya sesi Claude Code.');
+  await expect(page.locator('#continue')).not.toBeVisible();
+});
+
+test('the dialog preselects the newest session and another account', async ({ page }) => {
+  await ready(page);
+  await openContinue(page);
+  const dlg = page.locator('#continue');
+  await expect(dlg).toBeVisible();
+  await expect(dlg.getByRole('radio', { name: /Sesi terakhir wedding app/ })).toBeChecked();
+  await expect(dlg.getByRole('combobox', { name: 'Ke akun' })).toContainText('Slot B');
+  await expect(dlg).toContainText('Slot B akan dibuka dengan sesi ini.');
+  expect((await new AxeBuilder({ page }).withTags(AA).analyze()).violations).toEqual([]);
+});
+
+test('continuing announces it and opens the destination', async ({ page }) => {
+  await ready(page);
+  await openContinue(page);
+  await page.locator('#continue').getByRole('button', { name: 'Lanjutkan' }).click();
+  await expect(page.locator('#live')).toHaveText('Sesi “Sesi terakhir wedding app” dilanjutkan di Slot B.');
+  await expect(row(page, 'Slot B')).toContainText('Berjalan');
+});
+
+test('a newer copy in the destination is reported', async ({ page }) => {
+  await ready(page, '&continue=newer');
+  await openContinue(page);
+  await page.locator('#continue').getByRole('button', { name: 'Lanjutkan' }).click();
+  await expect(page.locator('#alert')).toContainText('lebih baru di akun tujuan');
+});
+
+test('Esc closes the continue dialog and returns focus to the options button', async ({ page }) => {
+  await ready(page);
+  await openContinue(page);
+  await expect(page.locator('#continue')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#continue')).not.toBeVisible();
+  await expect(row(page, 'Utama').getByRole('button', { name: 'Opsi untuk Utama' })).toBeFocused();
+});

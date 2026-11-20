@@ -67,6 +67,21 @@
     },
     async open_update_notes() {},
     async open_link_settings() {},
+    // ?sessions=0: no sessions; ?continue=newer: the destination has a newer copy.
+    async list_sessions() {
+      if (params.get("sessions") === "0") return [];
+      const now = Date.now();
+      return [
+        { id: "local_a", title: "Sesi terakhir wedding app", folder: "Coding Folks", last_activity: now - 5 * 60000 },
+        { id: "local_b", title: "Fix login Google", folder: "claude-switcher", last_activity: now - 2 * 3600000 },
+        { id: "local_c", title: "", folder: "landing-page", last_activity: now - 3 * 86400000 },
+      ];
+    },
+    async continue_session({ sessionId, to }) {
+      if (params.get("continue") === "newer") throw { code: "Invalid", message_id: "err.continue_newer", detail: null };
+      const a = find(to); a.state = "Running"; a.bytes = Math.round(0.9 * GB); emit("status", null);
+      return { local_a: "Sesi terakhir wedding app", local_b: "Fix login Google" }[sessionId] || "";
+    },
     async set_update_checks({ enabled }) { settings.update_checks = enabled ? "on" : "off"; },
     async hide_panel() { document.documentElement.dataset.hidden = "true"; },
     async open_account({ id, confirmedLowRam }) {

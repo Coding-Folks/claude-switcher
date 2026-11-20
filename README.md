@@ -76,6 +76,7 @@ account open at once, each in its own window, while your skills, plugins and mem
 | Open or show an account | **Open** / **Show** on its row |
 | Close one account | **⋯ → Close** |
 | Copy your Code sessions into it | **⋯ → Import history** (sign in to that account first) |
+| Continue a session after a usage limit | **⋯ → Continue a session in another account…**, pick the session and the account |
 | Fix a problem | **Repair** appears on the row when something is wrong |
 | Remove an account | **⋯ → Remove** (its login and data go; your Main account is untouched) |
 | Change the language | **Language** at the bottom of the panel |
