@@ -90,7 +90,7 @@ fn import_sessions(name: &str) -> AppResult<()> {
         let system = std::env::var_os("SystemRoot")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-        let _ = std::process::Command::new(system.join(r"System32\icacls.exe"))
+        let _ = crate::proc::console(system.join(r"System32\icacls.exe"))
             .arg(dest)
             .args(["/setowner", name, "/T", "/C", "/Q"])
             .output();

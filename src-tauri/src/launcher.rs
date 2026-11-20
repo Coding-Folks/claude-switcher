@@ -224,7 +224,7 @@ pub fn close(root_pid: u32, as_user: Option<(&str, &Zeroizing<String>)>) -> AppR
     let args = format!("/PID {root_pid} /T /F");
     match as_user {
         None => {
-            let out = std::process::Command::new(system32("taskkill.exe"))
+            let out = crate::proc::console(system32("taskkill.exe"))
                 .args(args.split(' '))
                 .output()?;
             // 128 = no such process: it already ended, which is what we wanted.

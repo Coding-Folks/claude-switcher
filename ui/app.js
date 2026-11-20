@@ -359,8 +359,9 @@
     // Grow with the content up to the screen's work area (spec said 480px; too short once the add form opens).
     const max = Math.max(480, (window.screen.availHeight || 480) - 32);
     const h = Math.min(max, Math.ceil(document.querySelector(".panel").scrollHeight));
-    const { LogicalSize, getCurrentWindow } = tauri.window;
-    getCurrentWindow().setSize(new LogicalSize(320, h)).catch(() => {});
+    // Rust resizes it and keeps the edge next to the taskbar in place (a plain setSize keeps the
+    // top-left corner, so a shorter panel drifted up, away from the tray).
+    invoke("fit_panel", { height: h }).catch(() => {});
   }
 
   // ---------- update ----------

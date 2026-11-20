@@ -260,3 +260,9 @@ pub fn set_update_checks(app: AppHandle, enabled: bool) -> AppResult<()> {
     refresh(&app);
     Ok(())
 }
+
+/// The panel's new content height (logical px): resize it, keeping the edge next to the taskbar.
+#[tauri::command]
+pub fn fit_panel(app: AppHandle, height: f64) {
+    crate::tray::fit_panel(&app, height);
+}

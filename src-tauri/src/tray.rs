@@ -149,6 +149,48 @@ pub fn toggle_panel(app: &AppHandle, anchor: Option<Rect>) {
     show_panel(app, anchor);
 }
 
+/// The edge of the panel that sits next to the taskbar and must stay put when its height changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    /// Opened above the tray (taskbar at the bottom): the panel's bottom, in physical px.
+    Bottom(i32),
+    /// Opened below the tray (taskbar at the top): the panel's top.
+    Top(i32),
+}
+
+/// Where the panel goes after a resize: by its fixed edge, kept inside the work area
+/// (`area` = top and bottom of the work area).
+pub fn fit_y(edge: Edge, h: i32, area: (i32, i32), margin: i32) -> i32 {
+    let y = match edge {
+        Edge::Bottom(b) => b - h,
+        Edge::Top(t) => t,
+    };
+    let (lo, hi) = (area.0 + margin, area.1 - h - margin);
+    if hi < lo {
+        lo // taller than the work area: start at its top, the page scrolls
+    } else {
+        y.clamp(lo, hi)
+    }
+}
+
+/// Where the panel was last placed: its fixed edge and the work area it is on.
+static PLACED: std::sync::Mutex<Option<(Edge, (i32, i32))>> = std::sync::Mutex::new(None);
+const MARGIN: i32 = 8;
+
+/// Resizes the panel to `height` (logical px) and moves it so that the edge next to the taskbar
+/// stays where it was: a shorter panel no longer drifts up, away from the tray.
+pub fn fit_panel(app: &AppHandle, height: f64) {
+    let Some(w) = app.get_webview_window("panel") else {
+        return;
+    };
+    let _ = w.set_size(tauri::LogicalSize::new(320.0, height));
+    let placed = *PLACED.lock().unwrap();
+    if let (Some((edge, area)), Ok(pos), Ok(size)) = (placed, w.outer_position(), w.outer_size()) {
+        let y = fit_y(edge, size.height as i32, area, MARGIN);
+        let _ = w.set_position(PhysicalPosition::new(pos.x, y));
+    }
+}
+
 /// Shows the panel above the tray icon (or at the bottom-right of the work area), kept on that monitor.
 pub fn show_panel(app: &AppHandle, anchor: Option<Rect>) {
     let Some(w) = app.get_webview_window("panel") else {
@@ -171,24 +213,61 @@ pub fn show_panel(app: &AppHandle, anchor: Option<Rect>) {
             area.size.width as i32,
             area.size.height as i32,
         );
-        let margin = 8;
+        let margin = MARGIN;
         let (mut x, mut y) = (ax + aw - w_w - margin, ay + ah - w_h - margin);
+        let mut above = true;
         if let Some(r) = anchor {
             let p = r.position.to_physical::<i32>(m.scale_factor());
             let s = r.size.to_physical::<i32>(m.scale_factor());
             x = p.x + s.width / 2 - w_w / 2;
             // Taskbar at the top: open below the icon; otherwise above it.
-            y = if p.y < ay + ah / 2 {
-                p.y + s.height + margin
-            } else {
+            above = p.y >= ay + ah / 2;
+            y = if above {
                 p.y - w_h - margin
+            } else {
+                p.y + s.height + margin
             };
         }
         x = x.clamp(ax + margin, ax + aw - w_w - margin);
         y = y.clamp(ay + margin, ay + ah - w_h - margin);
         let _ = w.set_position(PhysicalPosition::new(x, y));
+        let edge = if above {
+            Edge::Bottom(y + w_h)
+        } else {
+            Edge::Top(y)
+        };
+        *PLACED.lock().unwrap() = Some((edge, (ay, ay + ah)));
     }
     let _ = w.show();
     let _ = w.set_focus();
     crate::commands::refresh(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Work area 0..1040 (taskbar below it), margin 8.
+    const AREA: (i32, i32) = (0, 1040);
+
+    #[test]
+    fn a_panel_above_the_tray_keeps_its_bottom_edge_when_it_shrinks_or_grows() {
+        let edge = Edge::Bottom(1032);
+        assert_eq!(fit_y(edge, 600, AREA, 8), 432);
+        assert_eq!(fit_y(edge, 400, AREA, 8), 632); // one account removed: it moves down, not up
+        assert_eq!(fit_y(edge, 700, AREA, 8), 332);
+    }
+
+    #[test]
+    fn a_panel_below_a_top_taskbar_keeps_its_top_edge() {
+        let edge = Edge::Top(56);
+        assert_eq!(fit_y(edge, 400, (48, 1080), 8), 56);
+        assert_eq!(fit_y(edge, 600, (48, 1080), 8), 56);
+    }
+
+    #[test]
+    fn a_panel_taller_than_the_work_area_starts_at_its_top() {
+        assert_eq!(fit_y(Edge::Bottom(1032), 2000, AREA, 8), 8);
+        assert_eq!(fit_y(Edge::Top(900), 600, AREA, 8), 432); // pushed up to stay on screen
+    }
 }
