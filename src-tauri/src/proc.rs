@@ -36,7 +36,10 @@ pub fn open_link(link: &str) -> std::io::Result<()> {
     if r.0 as isize > 32 {
         Ok(())
     } else {
-        Err(std::io::Error::other(format!("ShellExecute failed ({})", r.0 as isize)))
+        Err(std::io::Error::other(format!(
+            "ShellExecute failed ({})",
+            r.0 as isize
+        )))
     }
 }
 
