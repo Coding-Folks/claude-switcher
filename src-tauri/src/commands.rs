@@ -325,3 +325,20 @@ pub async fn continue_session(
     })
     .await
 }
+
+#[tauri::command]
+pub async fn mark_limited(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    until: Option<i64>,
+) -> AppResult<()> {
+    let f = state.flows()?;
+    blocking(&app, &state.busy, move || f.mark_limited(&id, until)).await
+}
+
+#[tauri::command]
+pub async fn clear_limit(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let f = state.flows()?;
+    blocking(&app, &state.busy, move || f.clear_limit(&id)).await
+}

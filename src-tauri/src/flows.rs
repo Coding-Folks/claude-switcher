@@ -48,7 +48,23 @@ pub struct AccountView {
     pub account: Account,
     pub state: AccountState,
     pub bytes: Option<u64>,
+    /// Recent Claude Code use and limit state (Main and same-user slots only).
+    pub usage: Option<UsageView>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UsageView {
+    pub five_h: u64,
+    pub seven_d: u64,
+    /// The limit lifts at (ms), when it is in force now.
+    pub limited_until: Option<i64>,
+    /// "auto" (seen in the transcripts) or "manual" (marked by the user).
+    pub limit_source: Option<&'static str>,
+    /// Token use at the limit, learned from earlier hits.
+    pub limit_tokens: Option<u64>,
+}
+
+const LIMIT_SAMPLES: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct RepairReport {
@@ -67,6 +83,10 @@ pub struct Flows<P: Platform> {
     close_wait: Mutex<Duration>,
     /// Set when accounts.json was corrupt at startup; the UI shows it once.
     pub recovered_backup: Mutex<Option<std::path::PathBuf>>,
+    /// Latest usage per account id (from the usage loop).
+    usage: Mutex<HashMap<String, crate::usage::Totals>>,
+    /// The automatic limit already learned from, per account (its `limited_until`).
+    learned_hits: Mutex<HashMap<String, i64>>,
 }
 
 fn invalid(why: &str) -> AppError {
@@ -83,6 +103,8 @@ impl<P: Platform> Flows<P> {
             problems: Mutex::new(HashSet::new()),
             close_wait: Mutex::new(Duration::from_secs(10)),
             recovered_backup: Mutex::new(None),
+            usage: Mutex::new(HashMap::new()),
+            learned_hits: Mutex::new(HashMap::new()),
         }
     }
 
@@ -312,7 +334,9 @@ impl<P: Platform> Flows<P> {
                     } else {
                         AccountState::Stopped
                     };
+                let usage = self.usage_view(&a);
                 AccountView {
+                    usage,
                     bytes: run.map(|r| r.1),
                     account: a,
                     state,
@@ -393,6 +417,8 @@ impl<P: Platform> Flows<P> {
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: None,
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -438,6 +464,8 @@ impl<P: Platform> Flows<P> {
             created_at: chrono::Utc::now().to_rfc3339(),
             data_root: Some(root.clone()),
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
         };
         let saved = {
             let _w = self.write.lock().unwrap();
@@ -609,6 +637,110 @@ impl<P: Platform> Flows<P> {
 
     /// Copies this Claude account's Code session list from the main user's data into the hidden user's.
     /// Claude must not be running as that user while its files are written, so it is closed first.
+    /// Accounts whose usage can be read, with their session folders (for the usage loop).
+    pub fn usage_targets(&self) -> Vec<(String, Vec<PathBuf>)> {
+        self.accounts()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.kind != AccountKind::WindowsUser)
+            .filter_map(|a| Some((a.id.clone(), self.session_roots(&a).ok()?)))
+            .collect()
+    }
+
+    fn usage_view(&self, a: &Account) -> Option<UsageView> {
+        if a.kind == AccountKind::WindowsUser {
+            return None;
+        }
+        let t = self
+            .usage
+            .lock()
+            .unwrap()
+            .get(&a.id)
+            .copied()
+            .unwrap_or_default();
+        let now = chrono::Utc::now().timestamp_millis();
+        let manual = a.limit_mark_until.filter(|u| *u > now);
+        let (limited_until, limit_source) = match (t.limited_until, manual) {
+            (Some(auto), Some(m)) if m > auto => (Some(m), Some("manual")),
+            (Some(auto), _) => (Some(auto), Some("auto")),
+            (None, Some(m)) => (Some(m), Some("manual")),
+            (None, None) => (None, None),
+        };
+        Some(UsageView {
+            five_h: t.five_h,
+            seven_d: t.seven_d,
+            limited_until,
+            limit_source,
+            limit_tokens: crate::usage::learned(&a.limit_samples),
+        })
+    }
+
+    /// Adds a learned-limit sample to an account (keeps the last three).
+    fn learn_limit(&self, id: &str, tokens: u64) -> AppResult<()> {
+        if tokens == 0 {
+            return Ok(());
+        }
+        let _w = self.write.lock().unwrap();
+        let mut list = self.accounts()?;
+        if let Some(a) = list.iter_mut().find(|a| a.id == id) {
+            a.limit_samples.push(tokens);
+            let extra = a.limit_samples.len().saturating_sub(LIMIT_SAMPLES);
+            a.limit_samples.drain(..extra);
+            self.store.save(&list)?;
+        }
+        Ok(())
+    }
+
+    /// New usage from the loop. Learns from each automatic limit once. True when anything changed.
+    pub fn record_usage(&self, totals: HashMap<String, crate::usage::Totals>) -> bool {
+        let mut learn = Vec::new();
+        {
+            let mut hits = self.learned_hits.lock().unwrap();
+            for (id, t) in &totals {
+                if let Some(until) = t.limited_until {
+                    if hits.get(id) != Some(&until) {
+                        hits.insert(id.clone(), until);
+                        learn.push((id.clone(), t.five_h));
+                    }
+                }
+            }
+        }
+        for (id, tokens) in learn {
+            let _ = self.learn_limit(&id, tokens);
+        }
+        let mut cur = self.usage.lock().unwrap();
+        let changed = *cur != totals;
+        *cur = totals;
+        changed
+    }
+
+    /// "Kena limit" by hand, until `until_ms` (default: five hours from now); learns the limit.
+    pub fn mark_limited(&self, id: &str, until_ms: Option<i64>) -> AppResult<()> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let until = until_ms.unwrap_or(now + crate::usage::WINDOW);
+        let five_h = self.usage.lock().unwrap().get(id).map_or(0, |t| t.five_h);
+        self.learn_limit(id, five_h)?;
+        let _w = self.write.lock().unwrap();
+        let mut list = self.accounts()?;
+        let a = list
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.not_found"))?;
+        a.limit_mark_until = Some(until);
+        self.store.save(&list)
+    }
+
+    pub fn clear_limit(&self, id: &str) -> AppResult<()> {
+        let _w = self.write.lock().unwrap();
+        let mut list = self.accounts()?;
+        let a = list
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "err.not_found"))?;
+        a.limit_mark_until = None;
+        self.store.save(&list)
+    }
+
     /// Main's or a same-user slot's `claude-code-sessions` folders; hidden users cannot take part.
     fn session_roots(&self, a: &Account) -> AppResult<Vec<PathBuf>> {
         match a.kind {
@@ -994,6 +1126,8 @@ mod tests {
             created_at: "2026-11-12T00:00:00Z".into(),
             data_root: None,
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
         };
         list.push(a.clone());
         f.store.save(&list).unwrap();
@@ -1026,6 +1160,8 @@ mod tests {
             created_at: "x".into(),
             data_root: Some(root.clone()),
             color: None,
+            limit_samples: Vec::new(),
+            limit_mark_until: None,
         });
         f.store.save(&list).unwrap();
         (id, root.display().to_string())
@@ -1233,6 +1369,78 @@ mod tests {
             "{:?}",
             f.p.calls()
         );
+    }
+
+    fn totals(five_h: u64, limited_until: Option<i64>) -> crate::usage::Totals {
+        crate::usage::Totals {
+            five_h,
+            seven_d: five_h,
+            limited_until,
+        }
+    }
+    fn view(f: &Flows<Fake>, id: &str) -> AccountView {
+        f.list()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.account.id == id)
+            .unwrap()
+    }
+    const FAR: i64 = 4_000_000_000_000; // year 2096: never in the past during the test
+
+    #[test]
+    fn usage_is_shown_for_main_and_slots_not_for_windows_users() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        let w = add_existing(&f, "Kantor", "claude-kantor");
+        let main = main_id(&f);
+        f.record_usage(HashMap::from([(main.clone(), totals(10, None))]));
+        assert_eq!(view(&f, &main).usage.unwrap().five_h, 10);
+        assert_eq!(view(&f, &b).usage.unwrap().five_h, 0);
+        assert!(view(&f, &w).usage.is_none());
+    }
+
+    #[test]
+    fn a_manual_mark_limits_the_account_until_then_and_learns_the_limit() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        f.record_usage(HashMap::from([(b.clone(), totals(1000, None))]));
+        f.mark_limited(&b, Some(FAR)).unwrap();
+        let u = view(&f, &b).usage.unwrap();
+        assert_eq!(
+            (u.limited_until, u.limit_source),
+            (Some(FAR), Some("manual"))
+        );
+        assert_eq!(u.limit_tokens, Some(1000));
+    }
+
+    #[test]
+    fn clear_limit_removes_the_mark() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        f.mark_limited(&b, Some(FAR)).unwrap();
+        f.clear_limit(&b).unwrap();
+        assert_eq!(view(&f, &b).usage.unwrap().limited_until, None);
+    }
+
+    #[test]
+    fn an_auto_limit_learns_once_per_hit() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        assert!(f.record_usage(HashMap::from([(b.clone(), totals(500, Some(FAR)))])));
+        f.record_usage(HashMap::from([(b.clone(), totals(600, Some(FAR)))]));
+        let u = view(&f, &b).usage.unwrap();
+        assert_eq!((u.limit_source, u.limit_tokens), (Some("auto"), Some(500)));
+    }
+
+    #[test]
+    fn samples_keep_the_last_three() {
+        let (f, _d) = flows();
+        let (b, _) = add_slot(&f, "B");
+        for t in [100, 200, 300, 400] {
+            f.record_usage(HashMap::from([(b.clone(), totals(t, None))]));
+            f.mark_limited(&b, Some(FAR)).unwrap();
+        }
+        assert_eq!(view(&f, &b).usage.unwrap().limit_tokens, Some(300)); // mean of 200, 300, 400
     }
 
     #[test]

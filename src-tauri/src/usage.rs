@@ -204,12 +204,23 @@ impl Tracker {
     }
 
     pub fn totals(&self, files: &[PathBuf], now_ms: i64) -> Totals {
+        let all: Vec<(PathBuf, i64, i64)> = files
+            .iter()
+            .map(|f| (f.clone(), i64::MIN, i64::MAX))
+            .collect();
+        self.totals_in(&all, now_ms)
+    }
+
+    /// Like `totals`, counting from each file only what happened in `[start, end)` (the time this
+    /// account owned that session).
+    pub fn totals_in(&self, files: &[(PathBuf, i64, i64)], now_ms: i64) -> Totals {
         let mut t = Totals::default();
-        for path in files {
+        for (path, start, end) in files {
             let Some(st) = self.files.get(&*path.to_string_lossy()) else {
                 continue;
             };
-            for e in &st.events {
+            let owned = |at: i64| at >= *start && at < *end;
+            for e in st.events.iter().filter(|e| owned(e.at_ms)) {
                 if e.at_ms <= now_ms && e.at_ms > now_ms - 7 * DAY {
                     t.seven_d += e.tokens;
                     if e.at_ms > now_ms - WINDOW {
@@ -217,7 +228,7 @@ impl Tracker {
                     }
                 }
             }
-            for l in &st.limits {
+            for l in st.limits.iter().filter(|l| owned(l.at_ms)) {
                 if l.until_ms > now_ms && l.at_ms <= now_ms {
                     t.limited_until =
                         Some(t.limited_until.map_or(l.until_ms, |u| u.max(l.until_ms)));
@@ -239,6 +250,42 @@ impl Tracker {
             }
         }
     }
+}
+
+/// An account id and the transcript ids it lists, each with when it was continued there.
+pub type SessionOwners = (String, Vec<(String, Option<i64>)>);
+
+/// Who owned each session when: for every transcript id listed by several accounts, an account owns
+/// it from the time it was continued there (or from the start when it has no such time) until the
+/// next account took it over. Accounts listing it without a time share that stretch (older copies).
+pub fn ownership(accounts: &[SessionOwners]) -> HashMap<String, Vec<(String, i64, i64)>> {
+    let mut by_cli: HashMap<&str, Vec<(i64, &str)>> = HashMap::new();
+    for (acct, ids) in accounts {
+        for (cli, since) in ids {
+            by_cli
+                .entry(cli)
+                .or_default()
+                .push((since.unwrap_or(i64::MIN), acct));
+        }
+    }
+    let mut out: HashMap<String, Vec<(String, i64, i64)>> = HashMap::new();
+    for (cli, owners) in by_cli {
+        for (since, acct) in &owners {
+            let end = owners
+                .iter()
+                .map(|(s, _)| *s)
+                .filter(|s| s > since)
+                .min()
+                .unwrap_or(i64::MAX);
+            out.entry(acct.to_string())
+                .or_default()
+                .push((cli.to_string(), *since, end));
+        }
+    }
+    for v in out.values_mut() {
+        v.sort();
+    }
+    out
 }
 
 /// The transcripts of these Claude Code sessions: `projects/*/<id>.jsonl` and their subagents.
@@ -468,8 +515,84 @@ mod tests {
     }
 
     #[test]
+    fn a_continued_session_belongs_to_each_account_from_its_move_on() {
+        let accounts = vec![
+            ("main".to_string(), vec![("c1".to_string(), None)]),
+            ("slot".to_string(), vec![("c1".to_string(), Some(5_000))]),
+        ];
+        let own = ownership(&accounts);
+        assert_eq!(own["main"], vec![("c1".to_string(), i64::MIN, 5_000)]);
+        assert_eq!(own["slot"], vec![("c1".to_string(), 5_000, i64::MAX)]);
+    }
+
+    #[test]
+    fn a_session_shared_without_a_move_time_counts_for_both() {
+        let accounts = vec![
+            ("main".to_string(), vec![("c1".to_string(), None)]),
+            ("slot".to_string(), vec![("c1".to_string(), None)]),
+        ];
+        let own = ownership(&accounts);
+        assert_eq!(own["main"], vec![("c1".to_string(), i64::MIN, i64::MAX)]);
+        assert_eq!(own["slot"], vec![("c1".to_string(), i64::MIN, i64::MAX)]);
+    }
+
+    #[test]
+    fn totals_in_a_time_range_count_only_what_happened_then() {
+        let dir = tmp();
+        let f = dir.join("s.jsonl");
+        let now = 100 * H;
+        append(&f, &(usage_line(now - 3 * H, 0, 0, 0, 100) + "\n"));
+        append(
+            &f,
+            &(error_line(now - 3 * H, "rate_limit", "limit reached") + "\n"),
+        );
+        append(&f, &(usage_line(now - H, 0, 0, 0, 7) + "\n"));
+        let mut tr = Tracker::new(dir.join("cache.json"));
+        tr.scan(std::slice::from_ref(&f));
+        // the account that took the session over 2 hours ago: only the later use, no limit
+        let after = tr.totals_in(&[(f.clone(), now - 2 * H, i64::MAX)], now);
+        assert_eq!((after.five_h, after.limited_until), (7, None));
+        let before = tr.totals_in(&[(f, i64::MIN, now - 2 * H)], now);
+        assert_eq!(before.five_h, 100);
+        assert!(before.limited_until.is_some());
+    }
+
+    #[test]
     fn learned_is_the_mean() {
         assert_eq!(learned(&[]), None);
         assert_eq!(learned(&[100, 200, 300]), Some(200));
+    }
+
+    #[test]
+    #[ignore] // live: prints each account's usage from the real transcripts (reads only)
+    fn live_usage_per_account() {
+        let home = PathBuf::from(std::env::var("USERPROFILE").unwrap());
+        let local = home.join(r"AppData\Local");
+        let mut roots = vec![("Main".to_string(), crate::history::sessions_dirs(&local))];
+        if let Ok(slots) = std::fs::read_dir(local.join(r"ClaudeSwitcher\slots")) {
+            for s in slots.flatten() {
+                let r = crate::history::sessions_dirs(&s.path().join("Local"));
+                roots.push((s.file_name().to_string_lossy().into_owned(), r));
+            }
+        }
+        let mut tr = Tracker::new(std::env::temp_dir().join("cs-live-usage-cache.json"));
+        let now = chrono::Utc::now().timestamp_millis();
+        for (name, r) in roots {
+            let ids: Vec<String> = crate::sessions::cli_ids(&r)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            let files = transcript_files(&home.join(".claude"), &ids);
+            tr.scan(&files);
+            let t = tr.totals(&files, now);
+            println!(
+                "{name}: sessions={} files={} 5h={} 7d={} limited={:?}",
+                ids.len(),
+                files.len(),
+                t.five_h,
+                t.seven_d,
+                t.limited_until
+            );
+        }
     }
 }

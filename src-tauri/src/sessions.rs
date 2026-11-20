@@ -85,6 +85,45 @@ pub fn list(roots: &[PathBuf], max: usize) -> Vec<SessionSummary> {
     out
 }
 
+/// Marks a session copied here by "Lanjutkan sesi": when (ms).
+pub const CONTINUED_AT: &str = "switcherContinuedAt";
+
+/// Every Claude Code transcript id the account's sessions point at (archived ones too, and the
+/// earlier ids of a session that was compacted or restarted): their usage is this account's.
+pub fn cli_ids(roots: &[PathBuf]) -> Vec<(String, Option<i64>)> {
+    let mut out: Vec<(String, Option<i64>)> = Vec::new();
+    for d in org_dirs(roots) {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.starts_with("local_") || !name.ends_with(".json") {
+                continue;
+            }
+            let Some(v) = std::fs::read_to_string(e.path())
+                .ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            else {
+                continue;
+            };
+            // Set when Claude Switcher continued this session here: its use belongs here from then on.
+            let since = v.get(CONTINUED_AT).and_then(millis);
+            if let Some(id) = v.get("cliSessionId").and_then(Value::as_str) {
+                out.push((id.to_string(), since));
+            }
+            if let Some(prior) = v.get("priorCliSessionIds").and_then(Value::as_array) {
+                out.extend(
+                    prior
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(|p| (p.to_string(), since)),
+                );
+            }
+        }
+    }
+    out.sort();
+    out.dedup_by(|a, b| a.0 == b.0);
+    out
+}
+
 fn modified(p: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(p).ok()?.modified().ok()
 }
@@ -138,6 +177,7 @@ pub fn plan_copy(src_json: &str, dest_existing: Option<&str>, now_ms: i64) -> Ap
     };
     obj.insert("lastFocusedAt".into(), focused);
     obj.insert("isArchived".into(), Value::Bool(false));
+    obj.insert(CONTINUED_AT.into(), Value::from(now_ms));
     Ok(CopyPlan::Write(
         serde_json::to_string(&v).expect("a JSON value serializes"),
     ))
@@ -288,6 +328,33 @@ mod tests {
     }
 
     #[test]
+    fn cli_ids_include_prior_ids_and_archived_sessions() {
+        let root = tmp().join("claude-code-sessions");
+        let org = root.join("acc").join("org");
+        write(
+            &org.join("local_a.json"),
+            r#"{"cliSessionId":"c1","priorCliSessionIds":["c0"],"isArchived":true}"#,
+        );
+        write(&org.join("local_b.json"), r#"{"cliSessionId":"c2"}"#);
+        write(&org.join("local_c.json"), "{ broken");
+        write(
+            &org.join("local_d.json"),
+            r#"{"cliSessionId":"c3","switcherContinuedAt":42}"#,
+        );
+        let mut ids = cli_ids(&[root]);
+        ids.sort();
+        assert_eq!(
+            ids,
+            [
+                ("c0".to_string(), None),
+                ("c1".to_string(), None),
+                ("c2".to_string(), None),
+                ("c3".to_string(), Some(42))
+            ]
+        );
+    }
+
+    #[test]
     fn a_copy_is_focused_now_and_unarchived() {
         let src = session("local_a", "Wedding", "C:\\", "\"300\"", true);
         let CopyPlan::Write(out) = plan_copy(&src, None, 9_999).unwrap() else {
@@ -299,6 +366,7 @@ mod tests {
         assert_eq!(v["title"], "Wedding");
         assert_eq!(v["cliSessionId"], "cli-1");
         assert_eq!(v["model"], "claude-opus-5-5");
+        assert_eq!(v["switcherContinuedAt"], 9_999); // from now on its use belongs to this account
     }
 
     #[test]
