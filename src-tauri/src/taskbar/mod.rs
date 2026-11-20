@@ -108,6 +108,23 @@ pub struct TickState {
     icon_failed: HashSet<String>,
     /// Claude's logo was missing (logged once).
     no_logo: bool,
+    /// Claude's package folder when it moved since start (Claude updates itself into a new folder).
+    claude_dir: Option<PathBuf>,
+    /// When Claude was last looked up again.
+    redetected_at: Option<std::time::Instant>,
+}
+
+/// How often Claude's folder may be looked up again while its logo is missing.
+const REDETECT_EVERY: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Look Claude up again (it updated into a new folder)? At most every ten minutes.
+fn should_redetect(last: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    last.map_or(true, |l| now.duration_since(l) >= REDETECT_EVERY)
+}
+
+/// Where Claude's logo comes from: the folder found after an update, else the one found at start.
+fn logo_dir<'a>(st: &'a TickState, started: &'a Path) -> &'a Path {
+    st.claude_dir.as_deref().unwrap_or(started)
 }
 
 /// One pass: colours, icons, shortcuts, stale files, then the windows of running accounts.
@@ -123,7 +140,8 @@ pub fn tick(flows: &Flows<WinPlatform>, exe: &Path, st: &mut TickState) {
         .iter()
         .filter(|a| a.kind != AccountKind::Main)
         .collect();
-    let install_dir = flows.platform().install_dir();
+    let started_dir = flows.platform().install_dir();
+    let install_dir = logo_dir(st, &started_dir).to_path_buf();
     let icons = icons_dir();
     let mut icon_of: HashMap<String, PathBuf> = HashMap::new();
     for a in &mine {
@@ -135,6 +153,22 @@ pub fn tick(flows: &Flows<WinPlatform>, exe: &Path, st: &mut TickState) {
                 icon_of.insert(a.id.clone(), p);
             }
             Err(e) if e.code == crate::error::ErrorCode::NotFound => {
+                // Claude updates itself into a new versioned folder: look it up again before giving up.
+                let now = std::time::Instant::now();
+                if should_redetect(st.redetected_at, now) {
+                    st.redetected_at = Some(now);
+                    if let Ok(pkg) = crate::claude_pkg::detect() {
+                        if pkg.install_dir != install_dir {
+                            applog::info(
+                                "taskbar: Claude moved",
+                                &[("to", &pkg.install_dir.display().to_string())],
+                            );
+                            st.claude_dir = Some(pkg.install_dir);
+                            st.no_logo = false;
+                            return; // the next tick uses the new folder
+                        }
+                    }
+                }
                 if !st.no_logo {
                     applog::error(
                         "taskbar: Claude's logo not found",
@@ -311,6 +345,27 @@ mod tests {
             icons_dir_for(Path::new(r"C:\Users\Public"), "alice"),
             PathBuf::from(r"C:\Users\Public\ClaudeSwitcher\icons\alice")
         );
+    }
+
+    #[test]
+    fn claude_is_looked_up_again_when_its_logo_is_gone_but_not_on_every_tick() {
+        let now = std::time::Instant::now();
+        assert!(should_redetect(None, now));
+        assert!(!should_redetect(Some(now), now));
+        assert!(!should_redetect(Some(now - REDETECT_EVERY / 2), now));
+        assert!(should_redetect(Some(now - REDETECT_EVERY), now));
+    }
+
+    #[test]
+    fn the_logo_comes_from_the_newly_found_claude_after_an_update() {
+        let started =
+            Path::new(r"C:\Program Files\WindowsApps\Claude_6.6395.0.0_x64__pzs8sxrjxfjjc");
+        let updated =
+            PathBuf::from(r"C:\Program Files\WindowsApps\Claude_6.28899.2.0_x64__pzs8sxrjxfjjc");
+        let mut st = TickState::default();
+        assert_eq!(logo_dir(&st, started), started);
+        st.claude_dir = Some(updated.clone());
+        assert_eq!(logo_dir(&st, started), updated.as_path());
     }
 
     #[test]

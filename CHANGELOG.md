@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- After Claude Desktop updated itself, accounts' taskbar icons stopped being made until Claude
+  Switcher restarted (it kept looking for Claude's logo in the old version's folder). It now finds
+  Claude's new folder by itself, at most every ten minutes while the logo is missing.
+
 ## [0.2.1] — 2026-11-20
 
 ### Fixed
